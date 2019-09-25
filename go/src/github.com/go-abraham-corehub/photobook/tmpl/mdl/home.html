@@ -7,16 +7,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" type="text/css" href="static/material.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Pacifico&display=swap" rel="stylesheet">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
     <script src="/static/material.js"></script>
-    <script src="/static/photobook.js"></script>
+    <script src="/static/photobook-home.js"></script>
 </head>
 
 <body>
-    <div class="demo-layout-waterfall mdl-layout mdl-js-layout">
-        <header class="mdl-layout__header mdl-layout__header--waterfall">
+    <div class="demo-layout-waterfall mdl-layout mdl-js-layout mdl-layout--fixed-header" >
+        <header class="mdl-layout__header mdl-layout__header--waterfall"style="background-color: rgb(13, 112, 158)">
 
             <!-- Top row, always visible -->
-            <div class="mdl-layout__header-row" style="background-color: rgb(13, 112, 158)">
+            <div class="mdl-layout__header-row">
                 <!-- Title -->
                 <span class="mdl-layout-title">PhotoBook</span>
 
@@ -26,23 +28,15 @@
                     <i class="material-icons">more_vert</i>
                 </button>
 
-                <ul class="mdl-menu mdl-menu--bottom-right mdl-js-menu mdl-js-ripple-effect"
+                <ul id="rightMenu" class="mdl-menu mdl-menu--bottom-right mdl-js-menu mdl-js-ripple-effect"
                     for="demo-menu-lower-right">
-                    <li class="mdl-menu__item">Some Action</li>
-                    <li class="mdl-menu__item">Another Action</li>
-                    <li disabled class="mdl-menu__item">Disabled Action</li>
-                    <li class="mdl-menu__item">Yet Another Action</li>
                 </ul>
 
             </div>
         </header>
         <div class="mdl-layout__drawer">
             <span class="mdl-layout-title">Title</span>
-            <nav class="mdl-navigation">
-                <a class="mdl-navigation__link" href="">Link</a>
-                <a class="mdl-navigation__link" href="">Link</a>
-                <a class="mdl-navigation__link" href="">Link</a>
-                <a class="mdl-navigation__link" href="">Link</a>
+            <nav id="leftMenu" class="mdl-navigation">
             </nav>
         </div>
         <main class="mdl-layout__content">

@@ -26,8 +26,8 @@ var cUser int
 
 //Response type for JSON
 type Response struct {
-	Name    string
-	Hobbies []string
+	MenuItemsLeft  []string
+	MenuItemsRight []string
 }
 
 const dataDir = "data"
@@ -121,12 +121,12 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 // AJAX Request Handler
 // https://github.com/ET-CS/golang-response-examples/blob/master/ajax-json.go
 func handlerAjax(w http.ResponseWriter, r *http.Request) {
-	profile := Response{"ET", []string{"music", "programming"}}
-	switch r.FormValue("job") {
-	case "loadMenuItems":
-		profile.Name = "Abey"
-	}
-	js, err := json.Marshal(profile)
+	menuItemsLeft := []string{"Left Menu Item 01", "Left Menu Item 02", "Left Menu Item 03"}
+	menuItemsRight := []string{"Right Menu Item 01", "Right Menu Item 02", "Right Menu Item 03"}
+
+	menuItems := Response{menuItemsLeft, menuItemsRight}
+
+	js, err := json.Marshal(menuItems)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
