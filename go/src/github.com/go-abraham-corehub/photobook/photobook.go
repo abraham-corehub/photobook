@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/hex"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"strings"
@@ -21,7 +22,7 @@ type Page struct {
 }
 
 const dataDir = "data"
-const tmplDir = "tmpl/loginV8"
+const tmplDir = "tmpl/mdl"
 
 var db *sql.DB
 
@@ -152,14 +153,12 @@ func loadPage(title string, user string, role int) (*Page, error) {
 			title = "home-user"
 		}
 	}
-	/*
-		filename := dataDir + "/" + title + ".txt"
-		body, err := ioutil.ReadFile(filename)
-		if err != nil {
-			return nil, err
-		}
+	filename := dataDir + "/" + title + ".txt"
+	body, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
 
-		p.Body = body
-	*/
+	p.Body = body
 	return p, nil
 }

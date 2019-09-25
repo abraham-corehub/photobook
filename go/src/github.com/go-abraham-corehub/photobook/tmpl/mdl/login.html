@@ -6,37 +6,48 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" type="text/css" href="static/material.css">
-    <div class="mdl-layout">
-        <div class="mdl-card mdl-shadow--2dp">
-            <form action="/authenticate" method="POST">
-                <div>
-                    <input type="text" id="username" name="username" placeholder="Username">
-                    <label for="user">Username</label>
-    
-                </div>
-    
-                <div>
-                    <input type="password" id="password" name="password" placeholder="Password" pattern="[A-Z,a-z, ,0-9]*">
-                    <label for="password">Password</label>
-                    <span>Alphabets and Numbers only</span>
-    
-                </div>
-                <div>
-    
-                    <button>LOGIN</button>
-                </div>
-    
-    
-            </form>
-        </div>
-
-    </div>
-   
-    <script src="static/material.min.js"></script>
+    <script src="static/material.js"></script>
 </head>
 
 <body>
-
+    <!-- Always shows a header, even in smaller screens. -->
+    <div class="mdl-layout mdl-js-layout mdl-layout--fixed-header">
+        <header class="mdl-layout__header">
+            <div class="mdl-layout__header-row">
+                <!-- Title -->
+                <span class="mdl-layout-title">PhotoBook</span>
+            </div>
+        </header>
+        <main class="mdl-layout__content">
+            <div class="page-content">
+                <div class="mdl-grid">
+                    <div class="mdl-cell" style="margin:auto">
+                        <h3 style="text-align:justify">Login</h3>
+                        <form action="/authenticate" method="POST">
+                            <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+                                <input class="mdl-textfield__input" type="text" id="username" name="username">
+                                <label class="mdl-textfield__label" for="username">Username...</label>
+                            </div>
+                            <div>
+                                <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+                                    <input class="mdl-textfield__input" type="password"
+                                        pattern="-?[0-9|a-z|A-Z]*(\.[0-9|a-z|A-Z]+)?" id="password" name="password">
+                                    <label class="mdl-textfield__label" for="password">Password...</label>
+                                    <span class="mdl-textfield__error">Pasword must contain Numbers or
+                                        Alphabets!</span>
+                                </div>
+                            </div>
+                            <div>
+                                <button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">
+                                    LOGIN
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
 </body>
 
 </html>
