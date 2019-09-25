@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>{{.Title}}</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" type="text/css" href="static/material.css">
+    <div class="mdl-layout">
+        <div class="mdl-card mdl-shadow--2dp">
+            <form action="/authenticate" method="POST">
+                <div>
+                    <input type="text" id="username" name="username" placeholder="Username">
+                    <label for="user">Username</label>
+    
+                </div>
+    
+                <div>
+                    <input type="password" id="password" name="password" placeholder="Password" pattern="[A-Z,a-z, ,0-9]*">
+                    <label for="password">Password</label>
+                    <span>Alphabets and Numbers only</span>
+    
+                </div>
+                <div>
+    
+                    <button>LOGIN</button>
+                </div>
+    
+    
+            </form>
+        </div>
+
+    </div>
+   
+    <script src="static/material.min.js"></script>
+</head>
+
+<body>
+
+</body>
+
+</html>
