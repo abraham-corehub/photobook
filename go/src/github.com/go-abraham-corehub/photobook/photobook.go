@@ -26,8 +26,24 @@ var cUser int
 
 //Response type for JSON
 type Response struct {
+	User           string
 	MenuItemsLeft  []string
 	MenuItemsRight []string
+}
+
+//Todo is a custom type
+type Todo struct {
+	Title string
+	Done  bool
+}
+
+//TodoPageData is a custom type
+type TodoPageData struct {
+	Title     string
+	User      string
+	PageTitle string
+	Body      string
+	Todos     []Todo
 }
 
 const dataDir = "data"
@@ -124,7 +140,7 @@ func handlerAjax(w http.ResponseWriter, r *http.Request) {
 	menuItemsLeft := []string{"Left Menu Item 01", "Left Menu Item 02", "Left Menu Item 03"}
 	menuItemsRight := []string{"Right Menu Item 01", "Right Menu Item 02", "Right Menu Item 03"}
 
-	menuItems := Response{menuItemsLeft, menuItemsRight}
+	menuItems := Response{"user", menuItemsLeft, menuItemsRight}
 
 	js, err := json.Marshal(menuItems)
 	if err != nil {
@@ -137,6 +153,8 @@ func handlerAjax(w http.ResponseWriter, r *http.Request) {
 
 func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 
+	var p *TodoPageData
+	p = &TodoPageData{PageTitle: "PhotoBook"}
 	uN := r.FormValue("username")
 	pW := r.FormValue("password")
 
@@ -149,15 +167,40 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 	role, user, isValid := dbCheckCredentials(uN, pWHS)
 	if isValid {
 		title = "home"
+		switch role {
+		case -7:
+			p = &TodoPageData{
+				PageTitle: user,
+				Body:      "This is the Admin Page",
+				Todos: []Todo{
+					{Title: "Task 1", Done: false},
+					{Title: "Task 2", Done: true},
+					{Title: "Task 3", Done: true},
+					{Title: "Task 4", Done: true},
+				},
+			}
+		default:
+			p = &TodoPageData{
+				PageTitle: user,
+				Body:      "This is your Home Page",
+				Todos: []Todo{
+					{Title: "Task 1", Done: false},
+					{Title: "Task 2", Done: true},
+				},
+			}
+		}
+
 	}
 
-	p, err := loadPage(title, user, role)
+	renderTemplateNew(w, title, p)
+
+}
+
+func renderTemplateNew(w http.ResponseWriter, tmpl string, p *TodoPageData) {
+	err := templates.ExecuteTemplate(w, tmpl+".html", p)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
-	renderTemplate(w, title, p)
-
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
