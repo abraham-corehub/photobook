@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -19,6 +20,14 @@ type Page struct {
 	Title string
 	Body  []byte
 	User  string
+}
+
+var cUser int
+
+//Response type for JSON
+type Response struct {
+	Name    string
+	Hobbies []string
 }
 
 const dataDir = "data"
@@ -38,6 +47,7 @@ func startWebApp() {
 			http.FileServer(http.Dir(tmplDir+"/"+"static"))))
 	http.HandleFunc("/", handlerLogin)
 	http.HandleFunc("/authenticate", handlerAuthenticate)
+	http.HandleFunc("/ajax", handlerAjax)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
@@ -108,6 +118,23 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 	renderTemplate(w, title, p)
 }
 
+// AJAX Request Handler
+// https://github.com/ET-CS/golang-response-examples/blob/master/ajax-json.go
+func handlerAjax(w http.ResponseWriter, r *http.Request) {
+	profile := Response{"ET", []string{"music", "programming"}}
+	switch r.FormValue("job") {
+	case "loadMenuItems":
+		profile.Name = "Abey"
+	}
+	js, err := json.Marshal(profile)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(js)
+}
+
 func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 
 	uN := r.FormValue("username")
@@ -148,9 +175,11 @@ func loadPage(title string, user string, role int) (*Page, error) {
 		case -7:
 			p.User = "Administrator"
 			title = "home-admin"
+			cUser = -7
 		default:
 			p.User = user
 			title = "home-user"
+			cUser = 1
 		}
 	}
 	filename := dataDir + "/" + title + ".txt"
