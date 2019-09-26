@@ -9,10 +9,9 @@ import (
 )
 
 func main() {
-	hashTest("admin")
-	hashTest("abey")
+	getHash("nahar")
 }
-func hashTest(str string) []byte {
+func getHash(str string) []byte {
 	pW := str
 	pWH := sha1.New()
 	pWH.Write([]byte(pW))

@@ -5,14 +5,16 @@
     <title>{{.Title}}</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" type="text/css" href="static/material.css">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css?family=Pacifico&display=swap" rel="stylesheet">
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
-    <script src="/static/material.js"></script>
+    <link href="static/material.css" rel="stylesheet" type="text/css">
+    <script src="static/material.js"></script>
 </head>
 
 <body>
+    <!-- List with avatar and controls -->
+
     <div class="demo-layout-waterfall mdl-layout mdl-js-layout mdl-layout--fixed-header">
         <header class="mdl-layout__header mdl-layout__header--waterfall" style="background-color: rgb(13, 112, 158)">
 
@@ -51,6 +53,25 @@
                         <h3>Welcome {{.Page.Title}}</h3>
                         <div>
                             <p>{{printf "%s" .Page.Body}}</p>
+                        </div>
+                        <div>
+                            <table class="mdl-data-table mdl-js-data-table mdl-shadow--2dp" style="margin:auto">
+                                <tbody>
+                                    {{range .Table.Rows}}
+                                    <tr>
+                                        <td><i class="material-icons"
+                                                style="font-size: 40px; color:  rgb(13, 112, 158)">person</i></td>
+                                        {{range .Row}}
+                                        <td class="mdl-data-table__cell--non-numeric"style="width: 100%">{{.Value}}</td>
+                                        {{end}}
+                                        <td><i class="material-icons"
+                                                style="font-size: 20px; color:  rgb(13, 112, 158)">edit</i></td>
+                                        <td><i class="material-icons"
+                                                style="font-size: 20px; color:  rgb(13, 112, 158)">delete</i></td>
+                                    </tr>
+                                    {{end}}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>

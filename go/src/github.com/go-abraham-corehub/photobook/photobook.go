@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -15,43 +16,63 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-//Response type for JSON
+//Response type is to send JSON data from Server to Client
 type Response struct {
-	Data AppData
+	Data *AppData
 }
 
-//MenuItems is a custom type
+//MenuItems is a custom type to store Menu items loaded dynamicaly on the Web Page's Header Bar
 type MenuItems struct {
 	Items string
 	Flag  bool
 }
 
-//AppData stores the Datas for the App
+//AppData is a custom type to store the Data related to the Application
 type AppData struct {
 	Title          string
 	User           *AppUser
 	MenuItemsLeft  []MenuItems
 	MenuItemsRight []MenuItems
 	Page           *PageData
+	Table          *DBTable
 	State          string
 }
 
-//PageData is a custom type
+//PageData is a custom type to store Title and Content / Body of the Web Page to be displayed
 type PageData struct {
 	Title string
 	Body  string
 }
 
-//AppUser is the App User
+//AppUser is a custom type to store the User's Name and access level (Role)
 type AppUser struct {
 	Name string
 	Role int
 }
 
+//DBTable is custom
+type DBTable struct {
+	Header RowData
+	Rows   []RowData
+}
+
+//RowData is custom
+type RowData struct {
+	Row []ColData
+}
+
+//ColData is custom
+type ColData struct {
+	Value string
+}
+
 const dataDir = "data"
+const pageDir = dataDir + "/page"
 const tmplDir = "tmpl/mdl"
 
-var db *sql.DB
+var pathDB = "db/pb.db"
+
+var aD *AppData
 
 var templates = template.Must(template.ParseFiles(tmplDir+"/"+"login.html", tmplDir+"/"+"home.html"))
 
@@ -60,13 +81,21 @@ func main() {
 }
 
 func startWebApp() {
+
 	http.Handle("/static/", //final url can be anything
 		http.StripPrefix("/static/",
 			http.FileServer(http.Dir(tmplDir+"/"+"static"))))
 	http.HandleFunc("/", handlerLogin)
 	http.HandleFunc("/authenticate", handlerAuthenticate)
-	//http.HandleFunc("/ajax", handlerAjax)
+	http.HandleFunc("/ajax", handlerAjax)
 	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+func init() {
+	aD = &AppData{}
+	aD.User = &AppUser{}
+	aD.Page = &PageData{}
+	aD.Title = "PhotoBook"
 }
 
 func handlerLogin(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +109,6 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
-	aD := &AppData{Title: "PhotoBook"}
 	var err error
 	uN := r.FormValue("username")
 	pW := r.FormValue("password")
@@ -91,7 +119,7 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 	pWHS := hex.EncodeToString(pWH.Sum(nil))
 
 	state := "login"
-	role, user, isValid := dbCheckCredentials(uN, pWHS)
+	user, role, isValid := dbCheckCredentials(uN, pWHS)
 	if isValid {
 		state = "home"
 	}
@@ -104,44 +132,75 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 	renderTemplate(w, state, aD)
 }
 
-func dbCheckCredentials(username string, password string) (int, string, bool) {
-	db, err := sql.Open("sqlite3", "./db/pb.db")
+func dbCheckCredentials(username string, password string) (string, int, bool) {
+	db, err := sql.Open("sqlite3", pathDB)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 	username, fl := conditionString(username)
-	if !fl {
-		return 0, "", false
+	if fl {
+		username = "\"" + username + "\""
+
+		password, fl = conditionString(password)
+
+		if fl {
+			password = "\"" + password + "\""
+
+			queryString := "select name, role from user where username == " + username + " and password == " + password
+			rows, err := db.Query(queryString)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			defer rows.Close()
+
+			if rows.Next() {
+				var name string
+				var role int
+				err = rows.Scan(&name, &role)
+				if err != nil {
+					log.Fatal(err)
+				} else {
+					return name, role, true
+				}
+			}
+		}
 	}
 
-	username = "\"" + username + "\""
+	return "", 0, false
+}
 
-	password, fl = conditionString(password)
-	if !fl {
-		return 0, "", false
+func dbGetUsers() (DBTable, bool) {
+	db, err := sql.Open("sqlite3", pathDB)
+	dbTable := DBTable{}
+	dbTable.Header = RowData{[]ColData{{"name"}, {"username"}}}
+	dbTable.Rows = make([]RowData, 0)
+
+	if err != nil {
+		log.Fatal(err)
 	}
-	password = "\"" + password + "\""
-
-	queryString := "select role, name from user where username == " + username + " and password == " + password
+	defer db.Close()
+	queryString := `select ` + dbTable.Header.Row[0].Value + ` from user where ` + dbTable.Header.Row[1].Value + ` != "admin"`
 	rows, err := db.Query(queryString)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	defer rows.Close()
-
-	if rows.Next() {
-		var role int
+	for rows.Next() {
 		var name string
-		err = rows.Scan(&role, &name)
+		err = rows.Scan(&name)
 		if err != nil {
 			log.Fatal(err)
 		} else {
-			return role, name, true
+			dbTable.Rows = append(dbTable.Rows, RowData{[]ColData{{name}}})
 		}
 	}
-	return 0, "", false
+	if len(dbTable.Rows) > 0 {
+		return dbTable, true
+	}
+	return dbTable, false
 }
 
 func conditionString(str string) (string, bool) {
@@ -162,7 +221,9 @@ func conditionString(str string) (string, bool) {
 }
 
 func loadPage(state string, user string, role int) (*AppData, error) {
-	aD := &AppData{Title: "PhotoBook", User: &AppUser{user, role}, State: state, Page: &PageData{}}
+	aD.User.Name = user
+	aD.User.Role = role
+	aD.State = state
 	var nameFilePageContent string
 	switch aD.State {
 	case "home":
@@ -170,37 +231,39 @@ func loadPage(state string, user string, role int) (*AppData, error) {
 		case -7:
 			nameFilePageContent = "home-admin"
 			aD.MenuItemsLeft = []MenuItems{
-				{Items: "Task 1", Flag: false},
-				{Items: "Task 2", Flag: true},
-				{Items: "Task 3", Flag: true},
-				{Items: "Task 4", Flag: true},
+				{Items: "My Account"},
+				{Items: "Quit"},
 			}
 			aD.MenuItemsRight = []MenuItems{
-				{Items: "Task 1", Flag: false},
-				{Items: "Task 2", Flag: true},
-				{Items: "Task 3", Flag: true},
-				{Items: "Task 4", Flag: true},
+				{Items: "Create User"},
+				{Items: "Upload Image"},
+				{Items: "Create Album"},
+				{Items: "Download Album"},
 			}
 			aD.Page.Title = "Administrator"
-			aD.Page.Body = "This is the Admin Page"
+
+			dBT, isNotEmpty := dbGetUsers()
+			if isNotEmpty {
+				aD.Table = &dBT
+			}
+
 		default:
 			nameFilePageContent = "home-user"
 			aD.MenuItemsLeft = []MenuItems{
-				{Items: "Task 1", Flag: false},
-				{Items: "Task 2", Flag: true},
+				{Items: "My Account"},
+				{Items: "Quit"},
 			}
 			aD.MenuItemsRight = []MenuItems{
-				{Items: "Task 1", Flag: false},
-				{Items: "Task 2", Flag: true},
-				{Items: "Task 3", Flag: true},
+				{Items: "Upload Image"},
+				{Items: "Create Album"},
+				{Items: "Download Album"},
 			}
 			aD.Page.Title = aD.User.Name
-			aD.Page.Body = "This is your Home Page"
 		}
 	default:
 		nameFilePageContent = "login"
 	}
-	filename := dataDir + "/" + nameFilePageContent + ".txt"
+	filename := pageDir + "/content-" + nameFilePageContent + ".txt"
 	body, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -218,12 +281,36 @@ func renderTemplate(w http.ResponseWriter, tmpl string, aD *AppData) {
 
 // AJAX Request Handler https://github.com/ET-CS/golang-response-examples/blob/master/ajax-json.go
 func handlerAjax(w http.ResponseWriter, r *http.Request) {
-	menuItems := Response{}
-	js, err := json.Marshal(menuItems)
+	response := Response{Data: aD}
+	js, err := json.Marshal(response)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(js)
+}
+
+func testDb() {
+	db, err := sql.Open("sqlite3", pathDB)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	rows, err := db.Query("select * from user")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		var un string
+		var pw string
+		err = rows.Scan(&un, &pw)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(un, pw)
+	}
 }
