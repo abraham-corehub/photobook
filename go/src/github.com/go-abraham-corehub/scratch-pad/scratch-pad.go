@@ -13,7 +13,7 @@ import (
 func main() {
 	testDb()
 	hashTest("admin")
-	hashTest("abraham")
+	hashTest("abey")
 }
 func hashTest(str string) []byte {
 	pW := str

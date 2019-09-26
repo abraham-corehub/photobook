@@ -29,22 +29,18 @@
 
                 <ul id="rightMenu" class="mdl-menu mdl-menu--bottom-right mdl-js-menu mdl-js-ripple-effect"
                     for="demo-menu-lower-right">
-                    {{range .Todos}}
-                    <li class="mdl-menu__item">{{.Title}}</li>
+                    {{range .MenuItemsRight}}
+                    <li class="mdl-menu__item">{{.Items}}</li>
                     {{end}}
                 </ul>
 
             </div>
         </header>
         <div class="mdl-layout__drawer">
-            <span class="mdl-layout-title">{{.PageTitle}}</span>
+            <span class="mdl-layout-title">{{.User.Name}}</span>
             <nav id="leftMenu" class="mdl-navigation">
-                {{range .Todos}}
-                {{if .Done}}
-                <a class="mdl-navigation__link" id="done" href="">{{.Title}}</a>
-                {{else}}
-                <a class="mdl-navigation__link" href="">{{.Title}}</a>
-                {{end}}
+                {{range .MenuItemsLeft}}
+                <a class="mdl-navigation__link" href="">{{.Items}}</a>
                 {{end}}
             </nav>
         </div>
@@ -52,9 +48,9 @@
             <div class="page-content">
                 <div class="mdl-grid">
                     <div class="mdl-cell" style="text-align: center; margin:auto">
-                        <h3>Welcome {{.User}}</h3>
+                        <h3>Welcome {{.Page.Title}}</h3>
                         <div>
-                            <p>{{printf "%s" .Body}}</p>
+                            <p>{{printf "%s" .Page.Body}}</p>
                         </div>
                     </div>
                 </div>

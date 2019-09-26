@@ -15,35 +15,37 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-//Page is a type to implement HTML Page
-type Page struct {
-	Title string
-	Body  []byte
-	User  string
-}
-
-var cUser int
-
 //Response type for JSON
 type Response struct {
-	User           string
-	MenuItemsLeft  []string
-	MenuItemsRight []string
+	Data AppData
 }
 
-//Todo is a custom type
-type Todo struct {
+//MenuItems is a custom type
+type MenuItems struct {
+	Items string
+	Flag  bool
+}
+
+//AppData stores the Datas for the App
+type AppData struct {
+	Title          string
+	User           *AppUser
+	MenuItemsLeft  []MenuItems
+	MenuItemsRight []MenuItems
+	Page           *PageData
+	State          string
+}
+
+//PageData is a custom type
+type PageData struct {
 	Title string
-	Done  bool
+	Body  string
 }
 
-//TodoPageData is a custom type
-type TodoPageData struct {
-	Title     string
-	User      string
-	PageTitle string
-	Body      string
-	Todos     []Todo
+//AppUser is the App User
+type AppUser struct {
+	Name string
+	Role int
 }
 
 const dataDir = "data"
@@ -63,8 +65,43 @@ func startWebApp() {
 			http.FileServer(http.Dir(tmplDir+"/"+"static"))))
 	http.HandleFunc("/", handlerLogin)
 	http.HandleFunc("/authenticate", handlerAuthenticate)
-	http.HandleFunc("/ajax", handlerAjax)
+	//http.HandleFunc("/ajax", handlerAjax)
 	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+func handlerLogin(w http.ResponseWriter, r *http.Request) {
+	state := "login"
+	aD, err := loadPage(state, "", 0)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	renderTemplate(w, state, aD)
+}
+
+func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
+	aD := &AppData{Title: "PhotoBook"}
+	var err error
+	uN := r.FormValue("username")
+	pW := r.FormValue("password")
+
+	pWH := sha1.New()
+	pWH.Write([]byte(pW))
+
+	pWHS := hex.EncodeToString(pWH.Sum(nil))
+
+	state := "login"
+	role, user, isValid := dbCheckCredentials(uN, pWHS)
+	if isValid {
+		state = "home"
+	}
+	aD, err = loadPage(state, user, role)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	renderTemplate(w, state, aD)
 }
 
 func dbCheckCredentials(username string, password string) (int, string, bool) {
@@ -124,24 +161,64 @@ func conditionString(str string) (string, bool) {
 	return str, flag
 }
 
-func handlerLogin(w http.ResponseWriter, r *http.Request) {
-	title := "login"
-	p, err := loadPage(title, "", -1)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+func loadPage(state string, user string, role int) (*AppData, error) {
+	aD := &AppData{Title: "PhotoBook", User: &AppUser{user, role}, State: state, Page: &PageData{}}
+	var nameFilePageContent string
+	switch aD.State {
+	case "home":
+		switch aD.User.Role {
+		case -7:
+			nameFilePageContent = "home-admin"
+			aD.MenuItemsLeft = []MenuItems{
+				{Items: "Task 1", Flag: false},
+				{Items: "Task 2", Flag: true},
+				{Items: "Task 3", Flag: true},
+				{Items: "Task 4", Flag: true},
+			}
+			aD.MenuItemsRight = []MenuItems{
+				{Items: "Task 1", Flag: false},
+				{Items: "Task 2", Flag: true},
+				{Items: "Task 3", Flag: true},
+				{Items: "Task 4", Flag: true},
+			}
+			aD.Page.Title = "Administrator"
+			aD.Page.Body = "This is the Admin Page"
+		default:
+			nameFilePageContent = "home-user"
+			aD.MenuItemsLeft = []MenuItems{
+				{Items: "Task 1", Flag: false},
+				{Items: "Task 2", Flag: true},
+			}
+			aD.MenuItemsRight = []MenuItems{
+				{Items: "Task 1", Flag: false},
+				{Items: "Task 2", Flag: true},
+				{Items: "Task 3", Flag: true},
+			}
+			aD.Page.Title = aD.User.Name
+			aD.Page.Body = "This is your Home Page"
+		}
+	default:
+		nameFilePageContent = "login"
 	}
-	renderTemplate(w, title, p)
+	filename := dataDir + "/" + nameFilePageContent + ".txt"
+	body, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	aD.Page.Body = string(body)
+	return aD, nil
 }
 
-// AJAX Request Handler
-// https://github.com/ET-CS/golang-response-examples/blob/master/ajax-json.go
+func renderTemplate(w http.ResponseWriter, tmpl string, aD *AppData) {
+	err := templates.ExecuteTemplate(w, tmpl+".html", aD)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// AJAX Request Handler https://github.com/ET-CS/golang-response-examples/blob/master/ajax-json.go
 func handlerAjax(w http.ResponseWriter, r *http.Request) {
-	menuItemsLeft := []string{"Left Menu Item 01", "Left Menu Item 02", "Left Menu Item 03"}
-	menuItemsRight := []string{"Right Menu Item 01", "Right Menu Item 02", "Right Menu Item 03"}
-
-	menuItems := Response{"user", menuItemsLeft, menuItemsRight}
-
+	menuItems := Response{}
 	js, err := json.Marshal(menuItems)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -149,88 +226,4 @@ func handlerAjax(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(js)
-}
-
-func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
-
-	var p *TodoPageData
-	p = &TodoPageData{PageTitle: "PhotoBook"}
-	uN := r.FormValue("username")
-	pW := r.FormValue("password")
-
-	pWH := sha1.New()
-	pWH.Write([]byte(pW))
-
-	pWHS := hex.EncodeToString(pWH.Sum(nil))
-
-	title := "login"
-	role, user, isValid := dbCheckCredentials(uN, pWHS)
-	if isValid {
-		title = "home"
-		switch role {
-		case -7:
-			p = &TodoPageData{
-				PageTitle: user,
-				Body:      "This is the Admin Page",
-				Todos: []Todo{
-					{Title: "Task 1", Done: false},
-					{Title: "Task 2", Done: true},
-					{Title: "Task 3", Done: true},
-					{Title: "Task 4", Done: true},
-				},
-			}
-		default:
-			p = &TodoPageData{
-				PageTitle: user,
-				Body:      "This is your Home Page",
-				Todos: []Todo{
-					{Title: "Task 1", Done: false},
-					{Title: "Task 2", Done: true},
-				},
-			}
-		}
-
-	}
-
-	renderTemplateNew(w, title, p)
-
-}
-
-func renderTemplateNew(w http.ResponseWriter, tmpl string, p *TodoPageData) {
-	err := templates.ExecuteTemplate(w, tmpl+".html", p)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
-	err := templates.ExecuteTemplate(w, tmpl+".html", p)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-func loadPage(title string, user string, role int) (*Page, error) {
-	p := &Page{Title: title}
-	switch title {
-	case "home":
-		switch role {
-		case -7:
-			p.User = "Administrator"
-			title = "home-admin"
-			cUser = -7
-		default:
-			p.User = user
-			title = "home-user"
-			cUser = 1
-		}
-	}
-	filename := dataDir + "/" + title + ".txt"
-	body, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	p.Body = body
-	return p, nil
 }
