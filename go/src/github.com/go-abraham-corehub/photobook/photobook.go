@@ -281,6 +281,9 @@ func renderTemplate(w http.ResponseWriter, tmpl string, aD *AppData) {
 
 // AJAX Request Handler https://github.com/ET-CS/golang-response-examples/blob/master/ajax-json.go
 func handlerAjax(w http.ResponseWriter, r *http.Request) {
+	state := r.FormValue("state")
+	fmt.Println(state)
+
 	response := Response{Data: aD}
 	js, err := json.Marshal(response)
 	if err != nil {

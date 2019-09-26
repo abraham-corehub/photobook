@@ -11,9 +11,7 @@ function getMenuItems() {
             url: "/ajax",
             data:
             {
-                x: 1,
-                y: 2,
-                job: 'loadMenuItems'
+                state: '001'
             },
             dataType: 'json',
             success: function (result) {
