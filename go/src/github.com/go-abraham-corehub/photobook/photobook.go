@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha1"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -10,8 +11,6 @@ import (
 	"net/http"
 	"strings"
 	"text/template"
-
-	"crypto/sha1"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -81,14 +80,39 @@ func main() {
 }
 
 func startWebApp() {
+	mux := http.NewServeMux()
+	fileServer := http.FileServer(neuteredFileSystem{http.Dir(tmplDir + "/static/")})
+	mux.Handle("/static/", http.StripPrefix("/static/", fileServer))
 
-	http.Handle("/static/", //final url can be anything
-		http.StripPrefix("/static/",
-			http.FileServer(http.Dir(tmplDir+"/"+"static"))))
-	http.HandleFunc("/", handlerLogin)
-	http.HandleFunc("/authenticate", handlerAuthenticate)
-	http.HandleFunc("/ajax", handlerAjax)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	mux.HandleFunc("/", handlerLogin)
+	mux.HandleFunc("/authenticate", handlerAuthenticate)
+	mux.HandleFunc("/ajax", handlerAjax)
+	log.Fatal(http.ListenAndServe(":8080", mux))
+}
+
+//To disable Directory Listing
+//https://www.alexedwards.net/blog/disable-http-fileserver-directory-listings
+type neuteredFileSystem struct {
+	fs http.FileSystem
+}
+
+//To disable Directory Listing
+//https://www.alexedwards.net/blog/disable-http-fileserver-directory-listings
+func (nfs neuteredFileSystem) Open(path string) (http.File, error) {
+	f, err := nfs.fs.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	s, err := f.Stat()
+	if s.IsDir() {
+		index := strings.TrimSuffix(path, "/") + "/index.html"
+		if _, err := nfs.fs.Open(index); err != nil {
+			return nil, err
+		}
+	}
+
+	return f, nil
 }
 
 func init() {
@@ -110,25 +134,31 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 
 func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 	var err error
-	uN := r.FormValue("username")
-	pW := r.FormValue("password")
-
-	pWH := sha1.New()
-	pWH.Write([]byte(pW))
-
-	pWHS := hex.EncodeToString(pWH.Sum(nil))
-
 	state := "login"
-	user, role, isValid := dbCheckCredentials(uN, pWHS)
-	if isValid {
-		state = "home"
-	}
-	aD, err = loadPage(state, user, role)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	switch r.Method {
+	case "POST":
+		if err := r.ParseForm(); err != nil {
+			fmt.Fprintf(w, "ParseForm() err: %v", err)
+			return
+		}
+		uN := r.Form["username"]
+		pW := r.Form["password"]
 
+		pWH := sha1.New()
+		pWH.Write([]byte(pW[0]))
+
+		pWHS := hex.EncodeToString(pWH.Sum(nil))
+
+		user, role, isValid := dbCheckCredentials(uN[0], pWHS)
+		if isValid {
+			state = "home"
+		}
+		aD, err = loadPage(state, user, role)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 	renderTemplate(w, state, aD)
 }
 
