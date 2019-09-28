@@ -7,7 +7,7 @@ function init() {
 }
 
 function fnAjaxLoadPage(e) {
-    fnLog(e.target.closest('tr').id + ", " + e.target.nodeName + ", " + e.target.innerHTML);
+    //fnLog(e.target.closest('tr').id + ", " + e.target.nodeName + ", " + e.target.innerHTML);
     cRID = "02"
     switch (e.target.nodeName) {
         case 'I':
@@ -26,7 +26,7 @@ function fnAjaxLoadPage(e) {
                     break;
             }
     }
-    fnLog(clientRequest);
+    fnLog(cRID);
     jQuery.ajax({
         type: 'post',
         url: "/ajax",

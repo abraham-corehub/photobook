@@ -88,6 +88,8 @@ const tmplDir = "tmpl/mdl"
 
 var fsm appFSM
 
+// sTT defines the State Transitions for every client request (ajax) corresponding to the current server state.
+// current page at client side as remembered by the server, ajax input value sent by client, next page to be sent to client
 var sTT = [][]string{
 	{"login", "01", "home-admin"},
 	{"login", "02", "home-user"},
@@ -111,7 +113,12 @@ func main() {
 }
 
 func testFsm() {
-	fsm.createStateTable(sTT)
+	fsm = fsm.createStateTable(sTT)
+	fsm.state = "login"
+	fsm.state = fsm.run("01")
+	fmt.Println(fsm.state)
+	fsm.state = fsm.run("05")
+	fmt.Println(fsm.state)
 }
 
 func startWebApp() {
@@ -353,7 +360,8 @@ func renderTemplate(w http.ResponseWriter, tmpl string, aD *AppData) {
 // AJAX Request Handler https://github.com/ET-CS/golang-response-examples/blob/master/ajax-json.go
 func handlerAjax(w http.ResponseWriter, r *http.Request) {
 	fsmInput := r.FormValue("id")
-	fmt.Println(fsmInput)
+	fsm.run(fsmInput)
+	fmt.Println(fsm.state)
 
 	//response := Response{Quote: "Hello"}
 	response := aD
@@ -366,7 +374,7 @@ func handlerAjax(w http.ResponseWriter, r *http.Request) {
 	w.Write(js)
 }
 
-func (fsm appFSM) run(fsmInput string) {
+func (fsm appFSM) run(fsmInput string) string {
 	nS, prs := fsm.mSTD[cSIn{fsm.mS2ID[fsm.state], fsm.mS2ID[fsmInput]}]
 	if prs {
 		fsm.state = fsm.mID2S[nS]
@@ -376,10 +384,6 @@ func (fsm appFSM) run(fsmInput string) {
 			fsm.state = fsm.mID2S[nS]
 		}
 	}
-}
-
-func (fsm appFSM) getState() string {
-
 	return fsm.state
 }
 
@@ -407,7 +411,7 @@ func testDb() {
 	}
 }
 
-func (fsm appFSM) createStateTable(sTT [][]string) {
+func (fsm appFSM) createStateTable(sTT [][]string) appFSM {
 	table := make([][]string, 0)
 	col := make([]string, 0)
 
@@ -440,6 +444,7 @@ func (fsm appFSM) createStateTable(sTT [][]string) {
 	}
 	//fsm.showMapTable()
 	//fmt.Println(fsm.mID2S, fsm.mSTD, fsm.mSTX)
+	return fsm
 }
 
 func (fsm appFSM) showMapTable() {
