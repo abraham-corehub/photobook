@@ -314,8 +314,8 @@ func handlerAjax(w http.ResponseWriter, r *http.Request) {
 	state := r.FormValue("state")
 	fmt.Println(state)
 
-	response := Response{Data: aD}
-	js, err := json.Marshal(response)
+	//response := Response{Data: aD}
+	js, err := json.Marshal(aD)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

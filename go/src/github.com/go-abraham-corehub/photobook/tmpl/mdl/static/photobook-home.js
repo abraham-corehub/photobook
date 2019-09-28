@@ -1,29 +1,40 @@
 $(document).ready(init);
 
 function init() {
-    getMenuItems()
+    $('body').on('click', 'td', fnAjaxLoadPage);
+    //$("#iconTableUser").click(fnAjaxLoadPage);
+    fnLog("Loaded");
 }
 
-function getMenuItems() {
-    $.ajax(
+function fnAjaxLoadPage(e) {
+    fnLog("Clicked" + e.target.rowIndex);
+    jQuery.ajax(
         {
-            type: 'post',
-            url: "/ajax",
-            data:
+            type	: 'post',
+            url		: "/ajax",
+            data	: 
             {
-                state: '001'
+                state : "admin-home"
             },
             dataType: 'json',
-            success: function (result) {
-                renderMenus(result.MenuItemsLeft, result.MenuItemsRight)
+            success: function(result) {
+                fnLog("Success:"+result);
+            },
+            error: function(result) {
+                fnLog("Failure:"+result);
             }
         });
 }
 
-function fn_num_to_z_pfxd_str(num, required_length) {
-    var num_str = num.toString()
-    var len_num_str = num_str.length;
-    var diff_len = required_length - len_num_str;
+function fnNum2ZPfxdStr(num, requiredLength) {
+    var numStr = num.toString();
+    var lenNumStr = numStr.length;
+    var diffLen = requiredLength - lenNumStr;
+    for (var i = 0; i < diffLen; i++)
+    {
+       numStr += '0';
+    }
+    /*
     switch (diff_len) {
         case 1:
             num_str = '0' + num_str;
@@ -37,27 +48,14 @@ function fn_num_to_z_pfxd_str(num, required_length) {
         default:
             break;
     }
-    return num_str;
+    */
+    return numStr;
 }
 
-function renderMenus(menuItemsLeft, menuItemsRight) {
-    var s = $("#leftMenu").get()
-    $.each(menuItemsLeft, function (index, value) {
-        elStr = '<a class="mdl-navigation__link" href="">' + value + '</a>'
-        $(elStr).appendTo(s[0]);
-    });
-    
-    var s = $("#rightMenu").get()
-    $.each(menuItemsRight, function (index, value) {
-        elStr = '<li class="mdl-menu__item">' + value + '</li>'
-        $(elStr).appendTo(s[0]);
-    });
-}
-
-function fn_log(log_str) {
+function fnLog(logStr) {
     var dt = new Date();
 
-    var datetimestamp = dt.getFullYear() + "/" + fn_num_to_z_pfxd_str(dt.getMonth() + 1, 2) + "/" + fn_num_to_z_pfxd_str(dt.getDate(), 2) + " " + fn_num_to_z_pfxd_str(dt.getHours(), 2) + ":" + fn_num_to_z_pfxd_str(dt.getMinutes(), 2) + ":" + fn_num_to_z_pfxd_str(dt.getSeconds(), 2) + "." + fn_num_to_z_pfxd_str(dt.getMilliseconds(), 3);
+    var dateTimeStamp = dt.getFullYear() + "/" + fnNum2ZPfxdStr(dt.getMonth() + 1, 2) + "/" + fnNum2ZPfxdStr(dt.getDate(), 2) + " " + fnNum2ZPfxdStr(dt.getHours(), 2) + ":" + fnNum2ZPfxdStr(dt.getMinutes(), 2) + ":" + fnNum2ZPfxdStr(dt.getSeconds(), 2) + "." + fnNum2ZPfxdStr(dt.getMilliseconds(), 3);
     //var date_str = Date($.now());
-    console.log("@" + datetimestamp + "> " + log_str);
+    console.log("@" + dateTimeStamp + "> " + logStr);
 }
