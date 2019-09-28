@@ -17,7 +17,7 @@ import (
 
 //Response type is to send JSON data from Server to Client
 type Response struct {
-	Data *AppData
+	Quote string
 }
 
 //MenuItems is a custom type to store Menu items loaded dynamicaly on the Web Page's Header Bar
@@ -34,7 +34,6 @@ type AppData struct {
 	MenuItemsRight []MenuItems
 	Page           *PageData
 	Table          *DBTable
-	State          string
 }
 
 //PageData is a custom type to store Title and Content / Body of the Web Page to be displayed
@@ -47,6 +46,7 @@ type PageData struct {
 type AppUser struct {
 	Name string
 	Role int
+	ID   int
 }
 
 //DBTable is custom
@@ -57,17 +57,47 @@ type DBTable struct {
 
 //RowData is custom
 type RowData struct {
-	Row []ColData
+	Index int
+	Row   []ColData
 }
 
 //ColData is custom
 type ColData struct {
+	Index int
 	Value string
+}
+
+// appFSM holds the State Transition Table and
+// State Assignment Mappings which defines the State Machine
+type appFSM struct {
+	state string
+	mSTD  map[cSIn]byte   // Maps current states to next states for predefined inputs
+	mSTX  map[byte]byte   // Maps current states to next states without considering inputs
+	mS2ID map[string]byte // Maps State Names to State IDs
+	mID2S map[byte]string // Maps State IDs to State Names
+}
+
+type cSIn struct {
+	cS byte
+	in byte
 }
 
 const dataDir = "data"
 const pageDir = dataDir + "/page"
 const tmplDir = "tmpl/mdl"
+
+var fsm appFSM
+
+var sTT = [][]string{
+	{"login", "01", "home-admin"},
+	{"login", "02", "home-user"},
+	{"home-admin", "0", "login"},
+	{"home-admin", "01", "home-admin-createUser"},
+	{"home-admin", "02", "home-admin-viewUser"},
+	{"home-admin", "03", "home-admin-updateUser"},
+	{"home-admin", "04", "home-admin-resetUser"},
+	{"home-admin", "05", "home-admin-deleteUser"},
+}
 
 var pathDB = "db/pb.db"
 
@@ -76,7 +106,12 @@ var aD *AppData
 var templates = template.Must(template.ParseFiles(tmplDir+"/"+"login.html", tmplDir+"/"+"home.html"))
 
 func main() {
-	startWebApp()
+	testFsm()
+	//startWebApp()
+}
+
+func testFsm() {
+	fsm.createStateTable(sTT)
 }
 
 func startWebApp() {
@@ -135,6 +170,7 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 	var err error
 	state := "login"
+	var isValid bool
 	switch r.Method {
 	case "POST":
 		if err := r.ParseForm(); err != nil {
@@ -149,11 +185,11 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 
 		pWHS := hex.EncodeToString(pWH.Sum(nil))
 
-		user, role, isValid := dbCheckCredentials(uN[0], pWHS)
+		aD.User, isValid = dbCheckCredentials(uN[0], pWHS)
 		if isValid {
 			state = "home"
 		}
-		aD, err = loadPage(state, user, role)
+		aD, err = loadPage(state, aD.User.Name, aD.User.Role)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -162,7 +198,7 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 	renderTemplate(w, state, aD)
 }
 
-func dbCheckCredentials(username string, password string) (string, int, bool) {
+func dbCheckCredentials(username string, password string) (*AppUser, bool) {
 	db, err := sql.Open("sqlite3", pathDB)
 	if err != nil {
 		log.Fatal(err)
@@ -177,7 +213,7 @@ func dbCheckCredentials(username string, password string) (string, int, bool) {
 		if fl {
 			password = "\"" + password + "\""
 
-			queryString := "select name, role from user where username == " + username + " and password == " + password
+			queryString := "select name, role, id from user where username == " + username + " and password == " + password
 			rows, err := db.Query(queryString)
 			if err != nil {
 				log.Fatal(err)
@@ -188,30 +224,34 @@ func dbCheckCredentials(username string, password string) (string, int, bool) {
 			if rows.Next() {
 				var name string
 				var role int
-				err = rows.Scan(&name, &role)
+				var id int
+				err = rows.Scan(&name, &role, &id)
 				if err != nil {
 					log.Fatal(err)
 				} else {
-					return name, role, true
+					aD.User.Name = name
+					aD.User.Role = role
+					aD.User.ID = id
+					return aD.User, true
 				}
 			}
 		}
 	}
 
-	return "", 0, false
+	return aD.User, false
 }
 
 func dbGetUsers() (DBTable, bool) {
 	db, err := sql.Open("sqlite3", pathDB)
 	dbTable := DBTable{}
-	dbTable.Header = RowData{[]ColData{{"name"}, {"username"}}}
+	dbTable.Header = RowData{0, []ColData{{Index: 0, Value: "id"}, {Index: 1, Value: "name"}, {Index: 2, Value: "username"}}}
 	dbTable.Rows = make([]RowData, 0)
 
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	queryString := `select ` + dbTable.Header.Row[0].Value + ` from user where ` + dbTable.Header.Row[1].Value + ` != "admin"`
+	queryString := `select ` + dbTable.Header.Row[0].Value + ` , ` + dbTable.Header.Row[1].Value + ` from user where ` + dbTable.Header.Row[2].Value + ` != "admin"`
 	rows, err := db.Query(queryString)
 	if err != nil {
 		log.Fatal(err)
@@ -219,12 +259,13 @@ func dbGetUsers() (DBTable, bool) {
 
 	defer rows.Close()
 	for rows.Next() {
+		var id int
 		var name string
-		err = rows.Scan(&name)
+		err = rows.Scan(&id, &name)
 		if err != nil {
 			log.Fatal(err)
 		} else {
-			dbTable.Rows = append(dbTable.Rows, RowData{[]ColData{{name}}})
+			dbTable.Rows = append(dbTable.Rows, RowData{Index: id, Row: []ColData{{Value: name}}})
 		}
 	}
 	if len(dbTable.Rows) > 0 {
@@ -253,9 +294,9 @@ func conditionString(str string) (string, bool) {
 func loadPage(state string, user string, role int) (*AppData, error) {
 	aD.User.Name = user
 	aD.User.Role = role
-	aD.State = state
+	fsm.state = state
 	var nameFilePageContent string
-	switch aD.State {
+	switch fsm.state {
 	case "home":
 		switch aD.User.Role {
 		case -7:
@@ -311,17 +352,35 @@ func renderTemplate(w http.ResponseWriter, tmpl string, aD *AppData) {
 
 // AJAX Request Handler https://github.com/ET-CS/golang-response-examples/blob/master/ajax-json.go
 func handlerAjax(w http.ResponseWriter, r *http.Request) {
-	state := r.FormValue("state")
-	fmt.Println(state)
+	fsmInput := r.FormValue("id")
+	fmt.Println(fsmInput)
 
-	//response := Response{Data: aD}
-	js, err := json.Marshal(aD)
+	//response := Response{Quote: "Hello"}
+	response := aD
+	js, err := json.Marshal(response)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(js)
+}
+
+func (fsm appFSM) run(fsmInput string) {
+	nS, prs := fsm.mSTD[cSIn{fsm.mS2ID[fsm.state], fsm.mS2ID[fsmInput]}]
+	if prs {
+		fsm.state = fsm.mID2S[nS]
+	} else {
+		nS, prs = fsm.mSTX[fsm.mS2ID[fsm.state]]
+		if prs {
+			fsm.state = fsm.mID2S[nS]
+		}
+	}
+}
+
+func (fsm appFSM) getState() string {
+
+	return fsm.state
 }
 
 func testDb() {
@@ -346,4 +405,58 @@ func testDb() {
 		}
 		fmt.Println(un, pw)
 	}
+}
+
+func (fsm appFSM) createStateTable(sTT [][]string) {
+	table := make([][]string, 0)
+	col := make([]string, 0)
+
+	for _, row := range sTT {
+		col = append(col, []string{row[0], row[1], row[2]}...)
+		table = append(table, row)
+	}
+
+	//fmt.Println(table)
+	states := unique(col)
+	//fmt.Println(states)
+	fsm.mS2ID = make(map[string]byte)
+	fsm.mID2S = make(map[byte]string)
+	for i, state := range states {
+		fsm.mS2ID[state] = byte(i)
+		fsm.mID2S[byte(i)] = state
+	}
+
+	//fmt.Println(fsm.mID2S)
+	//fmt.Println(fsm.mS2ID)
+	fsm.mSTD = make(map[cSIn]byte)
+	fsm.mSTX = make(map[byte]byte)
+
+	for _, row := range table {
+		if row[1] != "0" {
+			fsm.mSTD[cSIn{fsm.mS2ID[row[0]], fsm.mS2ID[row[1]]}] = fsm.mS2ID[row[2]]
+		} else {
+			fsm.mSTX[fsm.mS2ID[row[0]]] = fsm.mS2ID[row[2]]
+		}
+	}
+	//fsm.showMapTable()
+	//fmt.Println(fsm.mID2S, fsm.mSTD, fsm.mSTX)
+}
+
+func (fsm appFSM) showMapTable() {
+	for a, v := range fsm.mSTD {
+		fmt.Println(a.cS, a.in, v)
+	}
+}
+
+//unique https://www.golangprograms.com/remove-duplicate-values-from-slice.html
+func unique(stringSlice []string) []string {
+	keys := make(map[string]bool)
+	list := []string{}
+	for _, entry := range stringSlice {
+		if _, value := keys[entry]; !value {
+			keys[entry] = true
+			list = append(list, entry)
+		}
+	}
+	return list
 }

@@ -1,54 +1,55 @@
 $(document).ready(init);
 
 function init() {
-    $('body').on('click', 'td', fnAjaxLoadPage);
-    //$("#iconTableUser").click(fnAjaxLoadPage);
+    //$('body').on('click', 'div.appTable', fnAjaxLoadPage);
+    $("#appTable tbody tr").on("click", fnAjaxLoadPage);
     fnLog("Loaded");
 }
 
 function fnAjaxLoadPage(e) {
-    fnLog("Clicked" + e.target.rowIndex);
-    jQuery.ajax(
-        {
-            type	: 'post',
-            url		: "/ajax",
-            data	: 
-            {
-                state : "admin-home"
-            },
-            dataType: 'json',
-            success: function(result) {
-                fnLog("Success:"+result);
-            },
-            error: function(result) {
-                fnLog("Failure:"+result);
+    fnLog(e.target.closest('tr').id + ", " + e.target.nodeName + ", " + e.target.innerHTML);
+    cRID = "02"
+    switch (e.target.nodeName) {
+        case 'I':
+            switch (e.target.innerHTML) {
+                case "person":
+                    cRID = "02"
+                    break;
+                case "edit":
+                    cRID = "03"
+                    break;
+                case "refresh":
+                    cRID = "04"
+                    break;
+                case "delete":
+                    cRID = "05"
+                    break;
             }
-        });
+    }
+    fnLog(clientRequest);
+    jQuery.ajax({
+        type: 'post',
+        url: "/ajax",
+        data: {
+            id: cRID
+        },
+        dataType: 'json',
+        success: function (result) {
+            fnLog("Success:" + result);
+        },
+        error: function (result) {
+            fnLog("Failure:" + result);
+        }
+    });
 }
 
 function fnNum2ZPfxdStr(num, requiredLength) {
     var numStr = num.toString();
     var lenNumStr = numStr.length;
     var diffLen = requiredLength - lenNumStr;
-    for (var i = 0; i < diffLen; i++)
-    {
-       numStr += '0';
+    for (var i = 0; i < diffLen; i++) {
+        numStr += '0';
     }
-    /*
-    switch (diff_len) {
-        case 1:
-            num_str = '0' + num_str;
-            break;
-        case 2:
-            num_str = '00' + num_str;
-            break;
-        case 3:
-            num_str = '000' + num_str;
-            break;
-        default:
-            break;
-    }
-    */
     return numStr;
 }
 

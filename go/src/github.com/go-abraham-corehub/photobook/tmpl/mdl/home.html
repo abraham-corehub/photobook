@@ -64,11 +64,11 @@
                         <div>
                             <p>{{printf "%s" .Page.Body}}</p>
                         </div>
-                        <div>
+                        <div id="appTable">
                             <table class="mdl-data-table mdl-js-data-table mdl-shadow--2dp" style="margin:auto">
                                 <tbody>
                                     {{range .Table.Rows}}
-                                    <tr>
+                                    <tr id="{{.Index}}">
                                         <td><i class="material-icons"
                                                 style="font-size: 40px; color:  rgb(13, 112, 158)">person</i></td>
                                         {{range .Row}}
@@ -77,6 +77,8 @@
                                         {{end}}
                                         <td><i class="material-icons"
                                                 style="font-size: 20px; color:  rgb(13, 112, 158)">edit</i></td>
+                                        <td><i class="material-icons"
+                                                style="font-size: 20px; color:  rgb(13, 112, 158)">refresh</i></td>
                                         <td><i class="material-icons"
                                                 style="font-size: 20px; color:  rgb(13, 112, 158)">delete</i></td>
                                     </tr>
@@ -90,4 +92,5 @@
         </main>
     </div>
 </body>
+
 </html>
