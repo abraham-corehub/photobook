@@ -17,7 +17,15 @@ import (
 
 //Response type is to send JSON data from Server to Client
 type Response struct {
-	Quote string
+	ID   int      `json:"ID"`
+	Data []string `json:"Data"`
+}
+
+//User type
+type User struct {
+	Firstname string `json:"firstname"`
+	Lastname  string `json:"lastname"`
+	Age       int    `json:"age"`
 }
 
 //MenuItems is a custom type to store Menu items loaded dynamicaly on the Web Page's Header Bar
@@ -30,7 +38,6 @@ type MenuItems struct {
 type AppData struct {
 	Title          string
 	User           *AppUser
-	MenuItemsLeft  []MenuItems
 	MenuItemsRight []MenuItems
 	Page           *PageData
 	Table          *DBTable
@@ -91,14 +98,22 @@ var fsm appFSM
 // sTT defines the State Transitions for every client request (ajax) corresponding to the current server state.
 // current page at client side as remembered by the server, ajax input value sent by client, next page to be sent to client
 var sTT = [][]string{
-	{"login", "01", "home-admin"},
-	{"login", "02", "home-user"},
+	{"login", "1", "home-admin"},
+	{"login", "2", "home-user"},
 	{"home-admin", "0", "login"},
-	{"home-admin", "01", "home-admin-createUser"},
-	{"home-admin", "02", "home-admin-viewUser"},
-	{"home-admin", "03", "home-admin-updateUser"},
-	{"home-admin", "04", "home-admin-resetUser"},
-	{"home-admin", "05", "home-admin-deleteUser"},
+	{"home-admin", "1", "home-admin-createUser"},
+	{"home-admin-createUser", "0", "login"},
+	{"home-admin-createUser", "1", "home-admin"},
+	{"home-admin-createUser", "2", "home-admin"},
+	{"home-admin", "2", "home-admin-viewUser"},
+	{"home-admin-viewUser", "0", "login"},
+	{"home-admin", "3", "home-admin-updateUser"},
+	{"home-admin-updateUser", "0", "login"},
+	{"home-admin", "4", "home-admin-resetUser"},
+	{"home-admin-resetUser", "0", "login"},
+	{"home-admin", "5", "home-admin-deleteUser"},
+	{"home-admin-deleteUser", "0", "login"},
+	{"home-user", "0", "login"},
 }
 
 var pathDB = "db/pb.db"
@@ -108,16 +123,18 @@ var aD *AppData
 var templates = template.Must(template.ParseFiles(tmplDir+"/"+"login.html", tmplDir+"/"+"home.html"))
 
 func main() {
-	testFsm()
-	//startWebApp()
+	//testFsm()
+	startWebApp()
 }
 
 func testFsm() {
 	fsm = fsm.createStateTable(sTT)
 	fsm.state = "login"
-	fsm.state = fsm.run("01")
+	fsm.state = fsm.run("1")
 	fmt.Println(fsm.state)
-	fsm.state = fsm.run("05")
+	fsm.state = fsm.run("4")
+	fmt.Println(fsm.state)
+	fsm.state = fsm.run("1")
 	fmt.Println(fsm.state)
 }
 
@@ -251,14 +268,14 @@ func dbCheckCredentials(username string, password string) (*AppUser, bool) {
 func dbGetUsers() (DBTable, bool) {
 	db, err := sql.Open("sqlite3", pathDB)
 	dbTable := DBTable{}
-	dbTable.Header = RowData{0, []ColData{{Index: 0, Value: "id"}, {Index: 1, Value: "name"}, {Index: 2, Value: "username"}}}
+	dbTable.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "username"}}}
 	dbTable.Rows = make([]RowData, 0)
 
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	queryString := `select ` + dbTable.Header.Row[0].Value + ` , ` + dbTable.Header.Row[1].Value + ` from user where ` + dbTable.Header.Row[2].Value + ` != "admin"`
+	queryString := `select ` + dbTable.Header.Row[0].Value + ` from user where ` + dbTable.Header.Row[1].Value + ` != "admin"`
 	rows, err := db.Query(queryString)
 	if err != nil {
 		log.Fatal(err)
@@ -266,13 +283,12 @@ func dbGetUsers() (DBTable, bool) {
 
 	defer rows.Close()
 	for rows.Next() {
-		var id int
 		var name string
-		err = rows.Scan(&id, &name)
+		err = rows.Scan(&name)
 		if err != nil {
 			log.Fatal(err)
 		} else {
-			dbTable.Rows = append(dbTable.Rows, RowData{Index: id, Row: []ColData{{Value: name}}})
+			dbTable.Rows = append(dbTable.Rows, RowData{Index: len(dbTable.Rows) + 1, Row: []ColData{{Value: name}}})
 		}
 	}
 	if len(dbTable.Rows) > 0 {
@@ -308,10 +324,6 @@ func loadPage(state string, user string, role int) (*AppData, error) {
 		switch aD.User.Role {
 		case -7:
 			nameFilePageContent = "home-admin"
-			aD.MenuItemsLeft = []MenuItems{
-				{Items: "My Account"},
-				{Items: "Quit"},
-			}
 			aD.MenuItemsRight = []MenuItems{
 				{Items: "Create User"},
 				{Items: "Upload Image"},
@@ -326,11 +338,8 @@ func loadPage(state string, user string, role int) (*AppData, error) {
 			}
 
 		default:
+			aD.Table = &DBTable{}
 			nameFilePageContent = "home-user"
-			aD.MenuItemsLeft = []MenuItems{
-				{Items: "My Account"},
-				{Items: "Quit"},
-			}
 			aD.MenuItemsRight = []MenuItems{
 				{Items: "Upload Image"},
 				{Items: "Create Album"},
@@ -359,12 +368,18 @@ func renderTemplate(w http.ResponseWriter, tmpl string, aD *AppData) {
 
 // AJAX Request Handler https://github.com/ET-CS/golang-response-examples/blob/master/ajax-json.go
 func handlerAjax(w http.ResponseWriter, r *http.Request) {
-	fsmInput := r.FormValue("id")
-	fsm.run(fsmInput)
-	fmt.Println(fsm.state)
+	if err := r.ParseForm(); err != nil {
+		fmt.Fprintf(w, "ParseForm() err: %v", err)
+		return
+	}
 
-	//response := Response{Quote: "Hello"}
-	response := aD
+	taskID := r.Form["ID"]
+	indexTableRow := r.Form["Data[]"]
+	//fsm.run(taskID[0])
+	//fmt.Println(fsm.state)
+
+	response := Response{Data: []string{taskID[0], indexTableRow[0]}}
+	//response := aD
 	js, err := json.Marshal(response)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -372,19 +387,6 @@ func handlerAjax(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(js)
-}
-
-func (fsm appFSM) run(fsmInput string) string {
-	nS, prs := fsm.mSTD[cSIn{fsm.mS2ID[fsm.state], fsm.mS2ID[fsmInput]}]
-	if prs {
-		fsm.state = fsm.mID2S[nS]
-	} else {
-		nS, prs = fsm.mSTX[fsm.mS2ID[fsm.state]]
-		if prs {
-			fsm.state = fsm.mID2S[nS]
-		}
-	}
-	return fsm.state
 }
 
 func testDb() {
@@ -409,6 +411,19 @@ func testDb() {
 		}
 		fmt.Println(un, pw)
 	}
+}
+
+func (fsm appFSM) run(fsmInput string) string {
+	nS, prs := fsm.mSTD[cSIn{fsm.mS2ID[fsm.state], fsm.mS2ID[fsmInput]}]
+	if prs {
+		fsm.state = fsm.mID2S[nS]
+	} else {
+		nS, prs = fsm.mSTX[fsm.mS2ID[fsm.state]]
+		if prs {
+			fsm.state = fsm.mID2S[nS]
+		}
+	}
+	return fsm.state
 }
 
 func (fsm appFSM) createStateTable(sTT [][]string) appFSM {

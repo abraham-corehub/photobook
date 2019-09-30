@@ -38,23 +38,26 @@
                 <button id="demo-menu-lower-right" class="mdl-button mdl-js-button mdl-button--icon">
                     <i class="material-icons">more_vert</i>
                 </button>
-
-                <ul class="mdl-menu mdl-menu--bottom-right mdl-js-menu mdl-js-ripple-effect"
-                    for="demo-menu-lower-right">
-                    {{range .MenuItemsRight}}
-                    <li class="mdl-menu__item">{{.Items}}</li>
-                    {{end}}
-                </ul>
-
+                <div class="appMenuItemsRight">
+                    <ul class="mdl-menu mdl-menu--bottom-right mdl-js-menu mdl-js-ripple-effect"
+                        for="demo-menu-lower-right">
+                        {{range .MenuItemsRight}}
+                        <li class="mdl-menu__item">{{.Items}}</li>
+                        {{end}}
+                    </ul>
+                </div>
             </div>
         </header>
         <div class="mdl-layout__drawer">
-            <span class="mdl-layout-title">{{.User.Name}}</span>
-            <nav id="leftMenu" class="mdl-navigation">
-                {{range .MenuItemsLeft}}
-                <a class="mdl-navigation__link" href="">{{.Items}}</a>
-                {{end}}
-            </nav>
+            <div class="appMenuItemsLeft">
+                <span class="mdl-layout-title">{{.User.Name}}</span>
+                <nav class="mdl-navigation">
+                    <a class="mdl-navigation__link"><i class="material-icons"
+                            style="font-size: 30px; color:  rgb(13, 112, 158)">account_circle</i>My Account</a>
+                    <a class="mdl-navigation__link"><i class="material-icons"
+                            style="font-size: 30px; color:  rgb(13, 112, 158)">arrow_back</i>Quit</a>
+                </nav>
+            </div>
         </div>
         <main class="mdl-layout__content">
             <div class="page-content">
@@ -64,7 +67,7 @@
                         <div>
                             <p>{{printf "%s" .Page.Body}}</p>
                         </div>
-                        <div id="appTable">
+                        <div class="appTable">
                             <table class="mdl-data-table mdl-js-data-table mdl-shadow--2dp" style="margin:auto">
                                 <tbody>
                                     {{range .Table.Rows}}

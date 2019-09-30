@@ -2,45 +2,91 @@ $(document).ready(init);
 
 function init() {
     //$('body').on('click', 'div.appTable', fnAjaxLoadPage);
-    $("#appTable tbody tr").on("click", fnAjaxLoadPage);
-    fnLog("Loaded");
+    $(".appTable tbody").on("click", fnAjaxLoadPage);
+    $(".appMenuItemsLeft nav").on("click", fnAjaxLoadPage);
+    $(".appMenuItemsRight li").on("click", fnAjaxLoadPage);
+    fnLog("init!");
 }
 
 function fnAjaxLoadPage(e) {
-    //fnLog(e.target.closest('tr').id + ", " + e.target.nodeName + ", " + e.target.innerHTML);
-    cRID = "02"
+    //fnLog(e.target.nodeName + ", " + $(e.target).text());
+    cRID = 11 // Client Request ID
+    var Rows = []
+    indexData = 0
     switch (e.target.nodeName) {
         case 'I':
-            switch (e.target.innerHTML) {
+        case 'A':
+            switch ($(e.target).text()) {
                 case "person":
-                    cRID = "02"
+                    cRID = 11
                     break;
                 case "edit":
-                    cRID = "03"
+                    cRID = 12
                     break;
                 case "refresh":
-                    cRID = "04"
+                    cRID = 13
                     break;
                 case "delete":
-                    cRID = "05"
+                    cRID = 14
+                    break;
+                case "account_circle":
+                    cRID = 1
+                    break;
+                case "arrow_back":
+                    cRID = 2
+                    break;
+                case "account_circleMy Account":
+                    cRID = 1
+                    break;
+                case "arrow_backQuit":
+                    cRID = 2
                     break;
             }
+            break;
+        case 'LI':
+            switch ($(e.target).text()) {
+                case "Create User":
+                    cRID = 3
+                    break;
+                case "Upload Image":
+                    cRID = 4
+                    break;
+                case "Create Album":
+                    cRID = 5
+                    break;
+                case "Download Album":
+                    cRID = 6
+                    break;
+            }
+            break;
     }
-    fnLog(cRID);
-    jQuery.ajax({
-        type: 'post',
-        url: "/ajax",
-        data: {
-            id: cRID
-        },
-        dataType: 'json',
-        success: function (result) {
-            fnLog("Success:" + result);
-        },
-        error: function (result) {
-            fnLog("Failure:" + result);
-        }
-    });
+    if (cRID > 9 && cRID < 20) {
+        Rows[indexData++] = $(e.target).closest("tr").attr("id")
+    }
+    //fnLog("Node: " + e.target.nodeName + ", Text: " + e.target.text + ", ID: " + cRID);
+    if (cRID > 0) {
+        //fnLog("ID: " + cRID);
+        jQuery.ajax({
+            type: 'post',
+            url: "/ajax",
+            data: {ID: cRID, Data: Rows},
+            dataType: 'json',
+            success: function (result) {
+                //fnLog("Success:" + result);
+                fnLog("Task ID:" + result["Data"][0] + ", Row Index:" + result["Data"][1]);
+            },
+            error: function (result) {
+                //fnLog("Failure:" + result);
+            }
+        });
+    }
+}
+
+function fnFindStr(sourceStr, str) {
+    if (sourceStr.indexOf(str) != -1) {
+        return str;
+    }
+    return "";
 }
 
 function fnNum2ZPfxdStr(num, requiredLength) {
