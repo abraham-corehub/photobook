@@ -150,18 +150,19 @@ func handlerAjax(w http.ResponseWriter, r *http.Request) {
 
 	taskID := r.Form["ID"]
 	indexTableRow := r.Form["Data[]"]
-	//fsm.run(taskID[0])
+	fsm.state = fsm.run(taskID[0])
 	//fmt.Println(fsm.state)
 
-	response := Response{Data: []string{taskID[0], indexTableRow[0]}}
+	jsonEncoder := json.NewEncoder(w)
+	response := Response{Data: indexTableRow}
+	w.Header().Set("Content-Type", "application/json")
+	err := jsonEncoder.Encode(response)
 	//response := aD
-	js, err := json.Marshal(response)
+	//js, err := json.Marshal(response)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(js)
 }
 
 //To disable Directory Listing
@@ -234,6 +235,7 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	aD.Page.Body = "dynamic.html"
 	renderTemplate(w, state, aD)
 }
 
