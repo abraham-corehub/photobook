@@ -17,15 +17,7 @@ import (
 
 //Response type is to send JSON data from Server to Client
 type Response struct {
-	ID   int      `json:"ID"`
-	Data []string `json:"Data"`
-}
-
-//User type
-type User struct {
-	Firstname string `json:"firstname"`
-	Lastname  string `json:"lastname"`
-	Age       int    `json:"age"`
+	Data []string
 }
 
 //MenuItems is a custom type to store Menu items loaded dynamicaly on the Web Page's Header Bar
@@ -147,6 +139,29 @@ func startWebApp() {
 	mux.HandleFunc("/authenticate", handlerAuthenticate)
 	mux.HandleFunc("/ajax", handlerAjax)
 	log.Fatal(http.ListenAndServe(":8080", mux))
+}
+
+// AJAX Request Handler https://github.com/ET-CS/golang-response-examples/blob/master/ajax-json.go
+func handlerAjax(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		fmt.Fprintf(w, "ParseForm() err: %v", err)
+		return
+	}
+
+	taskID := r.Form["ID"]
+	indexTableRow := r.Form["Data[]"]
+	//fsm.run(taskID[0])
+	//fmt.Println(fsm.state)
+
+	response := Response{Data: []string{taskID[0], indexTableRow[0]}}
+	//response := aD
+	js, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(js)
 }
 
 //To disable Directory Listing
@@ -364,29 +379,6 @@ func renderTemplate(w http.ResponseWriter, tmpl string, aD *AppData) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-}
-
-// AJAX Request Handler https://github.com/ET-CS/golang-response-examples/blob/master/ajax-json.go
-func handlerAjax(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		fmt.Fprintf(w, "ParseForm() err: %v", err)
-		return
-	}
-
-	taskID := r.Form["ID"]
-	indexTableRow := r.Form["Data[]"]
-	//fsm.run(taskID[0])
-	//fmt.Println(fsm.state)
-
-	response := Response{Data: []string{taskID[0], indexTableRow[0]}}
-	//response := aD
-	js, err := json.Marshal(response)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(js)
 }
 
 func testDb() {
