@@ -93,7 +93,7 @@ function fnNum2ZPfxdStr(num, requiredLength) {
     var lenNumStr = numStr.length;
     var diffLen = requiredLength - lenNumStr;
     for (var i = 0; i < diffLen; i++) {
-        numStr += '0';
+        numStr = '0' + numStr;
     }
     return numStr;
 }

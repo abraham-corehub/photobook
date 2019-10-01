@@ -92,19 +92,23 @@ var fsm appFSM
 var sTT = [][]string{
 	{"login", "1", "home-admin"},
 	{"login", "2", "home-user"},
+
 	{"home-admin", "0", "login"},
 	{"home-admin", "1", "home-admin-createUser"},
+	{"home-admin", "2", "home-admin-viewUser"},
+	{"home-admin", "3", "home-admin-updateUser"},
+	{"home-admin", "4", "home-admin-resetUser"},
+	{"home-admin", "5", "home-admin-deleteUser"},
+
 	{"home-admin-createUser", "0", "login"},
 	{"home-admin-createUser", "1", "home-admin"},
 	{"home-admin-createUser", "2", "home-admin"},
-	{"home-admin", "2", "home-admin-viewUser"},
+
 	{"home-admin-viewUser", "0", "login"},
-	{"home-admin", "3", "home-admin-updateUser"},
 	{"home-admin-updateUser", "0", "login"},
-	{"home-admin", "4", "home-admin-resetUser"},
 	{"home-admin-resetUser", "0", "login"},
-	{"home-admin", "5", "home-admin-deleteUser"},
 	{"home-admin-deleteUser", "0", "login"},
+
 	{"home-user", "0", "login"},
 }
 

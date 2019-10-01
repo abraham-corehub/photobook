@@ -27,8 +27,6 @@ func parseTemplates() {
 		"layout",
 		"head",
 		"body",
-		"header-home-admin",
-		"content-home-admin",
 	}
 
 	for i := 0; i < len(nUITs); i++ {
@@ -39,15 +37,13 @@ func parseTemplates() {
 		nUITs[0],
 		nUITs[1],
 		nUITs[2],
-		nUITs[3],
-		nUITs[4],
 	))
 }
 
 func startWebApp() {
 	parseTemplates()
 	mux := http.NewServeMux()
-	fileServer := http.FileServer(neuteredFileSystem{http.Dir("/" + dirStatic)})
+	fileServer := http.FileServer(neuteredFileSystem{http.Dir(dirStatic)})
 	mux.Handle("/"+dirStatic, http.StripPrefix("/"+dirStatic, fileServer))
 
 	mux.HandleFunc("/", handlerHome)
