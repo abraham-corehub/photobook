@@ -150,15 +150,28 @@ func handlerAjax(w http.ResponseWriter, r *http.Request) {
 
 	taskID := r.Form["ID"]
 	indexTableRow := r.Form["Data[]"]
-	fsm.state = fsm.run(taskID[0])
+	//fsm.state = fsm.run(taskID[0])
 	//fmt.Println(fsm.state)
+	dataStr := []string{}
+	if len(taskID) > 0 && len(indexTableRow) > 0 {
+		dataStr = []string{
+			taskID[0],
+			indexTableRow[0],
+		}
+	} else if len(taskID) > 0 {
+		dataStr = []string{
+			taskID[0],
+		}
+	} else {
+		dataStr = []string{
+			indexTableRow[0],
+		}
+	}
 
 	jsonEncoder := json.NewEncoder(w)
-	response := Response{Data: indexTableRow}
+	response := Response{Data: dataStr}
 	w.Header().Set("Content-Type", "application/json")
 	err := jsonEncoder.Encode(response)
-	//response := aD
-	//js, err := json.Marshal(response)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

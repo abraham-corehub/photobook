@@ -72,7 +72,7 @@ function fnAjaxLoadPage(e) {
             data: {ID: cRID, Data: Rows},
             dataType: 'json',
             success: function (result) {
-                fnLog("Success:" + result.Data);
+                fnLog("TaskID:" + result.Data[0] + ", Row:" + result.Data[1]);
             },
             error: function (result) {
                 fnLog("Failure:" + result);
