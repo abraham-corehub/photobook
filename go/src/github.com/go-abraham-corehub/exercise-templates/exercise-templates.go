@@ -7,7 +7,10 @@ import (
 	"text/template"
 )
 
-const tmplDir = ""
+const dirTmpl = "templates/"
+const dirStatic = "static/"
+
+var uITemplates *template.Template
 
 // TemplateData type
 type TemplateData struct {
@@ -18,10 +21,34 @@ func main() {
 	startWebApp()
 }
 
+func parseTemplates() {
+
+	nUITs := []string{
+		"layout",
+		"head",
+		"body",
+		"header-home-admin",
+		"content-home-admin",
+	}
+
+	for i := 0; i < len(nUITs); i++ {
+		nUITs[i] = dirTmpl + nUITs[i] + ".html"
+	}
+
+	uITemplates = template.Must(template.ParseFiles(
+		nUITs[0],
+		nUITs[1],
+		nUITs[2],
+		nUITs[3],
+		nUITs[4],
+	))
+}
+
 func startWebApp() {
+	parseTemplates()
 	mux := http.NewServeMux()
-	fileServer := http.FileServer(neuteredFileSystem{http.Dir(tmplDir + "static/")})
-	mux.Handle("/static/", http.StripPrefix("/static/", fileServer))
+	fileServer := http.FileServer(neuteredFileSystem{http.Dir("/" + dirStatic)})
+	mux.Handle("/"+dirStatic, http.StripPrefix("/"+dirStatic, fileServer))
 
 	mux.HandleFunc("/", handlerHome)
 	log.Fatal(http.ListenAndServe(":8080", mux))
@@ -58,8 +85,7 @@ func (nfs neuteredFileSystem) Open(path string) (http.File, error) {
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl string, tD *TemplateData) {
-	t := template.Must(template.ParseFiles(tmplDir + tmpl + ".html"))
-	err := t.ExecuteTemplate(w, tmpl, tD)
+	err := uITemplates.ExecuteTemplate(w, tmpl, tD)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

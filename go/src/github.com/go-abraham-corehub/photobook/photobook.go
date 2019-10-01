@@ -235,7 +235,6 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	aD.Page.Body = "dynamic.html"
 	renderTemplate(w, state, aD)
 }
 

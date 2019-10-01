@@ -1,0 +1,34 @@
+{{ define "header-home-admin" }}
+<header class="mdl-layout__header mdl-layout__header--waterfall" style="background-color: rgb(13, 112, 158)">
+
+    <!-- Top row, always visible -->
+    <div class="mdl-layout__header-row">
+        <!-- Title -->
+        <span class="mdl-layout-title">PhotoBook</span>
+
+        <div class="mdl-layout-spacer"></div>
+        <!-- Right aligned menu below button -->
+        <button id="demo-menu-lower-right" class="mdl-button mdl-js-button mdl-button--icon">
+            <i class="material-icons">more_vert</i>
+        </button>
+        <div class="appMenuItemsRight">
+            <ul class="mdl-menu mdl-menu--bottom-right mdl-js-menu mdl-js-ripple-effect" for="demo-menu-lower-right">
+                <li class="mdl-menu__item">Items One</li>
+                <li class="mdl-menu__item">Items Two</li>
+            </ul>
+        </div>
+    </div>
+</header>
+<div class="mdl-layout__drawer">
+    <div class="appMenuItemsLeft">
+        <span class="mdl-layout-title">User Name</span>
+        <nav class="mdl-navigation">
+            <a class="mdl-navigation__link"><i class="material-icons"
+                    style="font-size: 30px; color:  rgb(13, 112, 158)">account_circle</i>My Account</a>
+            <a class="mdl-navigation__link"><i class="material-icons"
+                    style="font-size: 30px; color:  rgb(13, 112, 158)">arrow_back</i>Quit</a>
+        </nav>
+    </div>
+</div>
+
+{{ end }}
