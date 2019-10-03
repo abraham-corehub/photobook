@@ -6,15 +6,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css?family=Pacifico&display=swap" rel="stylesheet">
+    <link href="static/icons_material.css" rel="stylesheet">
+    <link href="static/font_pacifico.css" rel="stylesheet">
 
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+    <script src="static/jquery.min.js"></script>
 
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/material-components-web/3.2.0/material-components-web.min.css"
+    <link href="static/material-components-web.min.css"
         rel="stylesheet">
     <script
-        src="https://cdnjs.cloudflare.com/ajax/libs/material-components-web/3.2.0/material-components-web.min.js"></script>
+        src="static/material-components-web.min.js"></script>
 
 
     <link href="static/material.css" rel="stylesheet" type="text/css">
@@ -41,9 +41,7 @@
                 <div class="appMenuItemsRight">
                     <ul class="mdl-menu mdl-menu--bottom-right mdl-js-menu mdl-js-ripple-effect"
                         for="demo-menu-lower-right">
-                        {{range .MenuItemsRight}}
-                        <li class="mdl-menu__item">{{.Items}}</li>
-                        {{end}}
+                        <li class="mdl-menu__item"><a href="/admin/user/view?id={{.User.ID}}" class="mdl-menu__item">Create User</a></li>
                     </ul>
                 </div>
             </div>
@@ -52,10 +50,10 @@
             <div class="appMenuItemsLeft">
                 <span class="mdl-layout-title"style = "padding: 10px">{{.User.Name}}</span>
                 <nav class="mdl-navigation">
-                    <a class="mdl-navigation__link"><i class="material-icons"
+                    <a href="/admin/myaccount?id={{.User.ID}}" class="mdl-navigation__link"><i class="material-icons"
                             style="font-size: 30px; color:  rgb(13, 112, 158)">account_circle</i>My Account</a>
-                    <a class="mdl-navigation__link"><i class="material-icons"
-                            style="font-size: 30px; color:  rgb(13, 112, 158)">arrow_back</i>Quit</a>
+                    <a href="/admin/logout?id={{.User.ID}}"class="mdl-navigation__link"><i class="material-icons"
+                            style="font-size: 30px; color:  rgb(13, 112, 158)">arrow_back</i>Logout</a>
                 </nav>
             </div>
         </div>
@@ -71,19 +69,19 @@
                             <table class="mdl-data-table mdl-js-data-table mdl-shadow--2dp" style="margin:auto">
                                 <tbody>
                                     {{range .Table.Rows}}
-                                    <tr id="{{.Index}}">
-                                        <td><i class="material-icons"
-                                                style="font-size: 40px; color:  rgb(13, 112, 158)">person</i></td>
+                                    <tr">
+                                        <td><a href="/admin/user/view?id={{.Index}}"><i class="material-icons"
+                                                style="font-size: 40px; color:  rgb(13, 112, 158)">person</i></a></td>
                                         {{range .Row}}
                                         <td class="mdl-data-table__cell--non-numeric" style="width: 100%">{{.Value}}
                                         </td>
                                         {{end}}
-                                        <td><i class="material-icons"
-                                                style="font-size: 20px; color:  rgb(13, 112, 158)">edit</i></td>
-                                        <td><i class="material-icons"
-                                                style="font-size: 20px; color:  rgb(13, 112, 158)">refresh</i></td>
-                                        <td><i class="material-icons"
-                                                style="font-size: 20px; color:  rgb(13, 112, 158)">delete</i></td>
+                                        <td><a href="/admin/user/edit?id={{.Index}}"><i class="material-icons"
+                                                style="font-size: 20px; color:  rgb(13, 112, 158)">edit</i></a></td>
+                                        <td><a href="/admin/user/reset?id={{.Index}}"><i class="material-icons"
+                                                style="font-size: 20px; color:  rgb(13, 112, 158)">refresh</i></a></td>
+                                        <td><a href="/admin/user/reset?id={{.Index}}"><i class="material-icons"
+                                                style="font-size: 20px; color:  rgb(13, 112, 158)">delete</i></a></td>
                                     </tr>
                                     {{end}}
                                 </tbody>
