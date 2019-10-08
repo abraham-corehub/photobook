@@ -83,11 +83,12 @@ var pathDB = "db/pb.db"
 
 var aD *AppData
 
-//var templates = template.Must(template.ParseFiles(tmplDir+"/"+"head.html", tmplDir+"/"+"login.html", tmplDir+"/"+"admin.html", tmplDir+"/"+"admin.html"))
-
 func main() {
-	//testFsm()
 	startWebApp()
+	/*
+		dTSExpr := time.Now().Add(-100 * time.Second).Unix()
+		fmt.Println(isTimeExpired(dTSExpr))
+	*/
 }
 
 func startWebApp() {
@@ -99,6 +100,13 @@ func startWebApp() {
 	mux.HandleFunc("/", handlerLogin)
 	mux.HandleFunc("/login", handlerAuthenticate)
 	log.Fatal(http.ListenAndServe(":8080", mux))
+}
+
+func getTimeStamp(t time.Time) string {
+	tD := t.Format("20060102")
+	tT := strings.Replace(t.Format("15.04.05.000"), ".", "", 3)
+	dTS := tD + tT
+	return dTS
 }
 
 //To disable Directory Listing
@@ -151,8 +159,7 @@ func initialize() {
 }
 
 func handlerLogin(w http.ResponseWriter, r *http.Request) {
-	tmplStr := "login"
-	renderTemplate(w, tmplStr, aD)
+	loadPage(w, "login")
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl string, aD *AppData) {
@@ -163,68 +170,83 @@ func renderTemplate(w http.ResponseWriter, tmpl string, aD *AppData) {
 }
 
 func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
-	tmplStr := "login"
+	tmpl := "login"
 	var isValid bool
 	var sessionToken string
 	if r.Method == "POST" {
 		c, err := r.Cookie("sessionToken")
 		if err != nil {
 			if err == http.ErrNoCookie {
-				if err := r.ParseForm(); err != nil {
-					fmt.Fprintf(w, "ParseForm() err: %v", err)
-					return
-				}
-				uN := r.Form["username"]
-				pW := r.Form["password"]
-
-				pWH := sha1.New()
-				pWH.Write([]byte(pW[0]))
-
-				pWHS := hex.EncodeToString(pWH.Sum(nil))
-
-				aD.User, isValid = dbCheckCredentials(uN[0], pWHS)
+				aD.User, isValid = verifyUser(w, r)
 				if isValid {
 					sessionToken, dTSExpr := setCookie(w)
 					dbStoreSession(sessionToken, aD.User, dTSExpr)
-					tmplStr = "admin"
-					aD.Page.Title = "Administrator"
-					aD.Page.Body = "This is the Admin page"
-					dBT, isNotEmpty := dbGetUsers()
-					if isNotEmpty {
-						aD.Table = &dBT
+					switch aD.User.Role {
+					case -7:
+						tmpl = "admin"
+					default:
+						tmpl = "user"
 					}
-					renderTemplate(w, tmplStr, aD)
+				} else {
+					w.Write([]byte("Invalid Username / Password"))
 					return
 				}
-			} else {
-				w.WriteHeader(http.StatusBadRequest)
-				return
 			}
 		} else {
 			sessionToken = c.Value
-			aD.User, isValid = dbGetUserFromSession(sessionToken)
+			userSession, isValid := dbGetUserFromSession(sessionToken)
 			if isValid {
-				switch aD.User.Role {
-				case -7:
-					tmplStr = "admin"
-					aD.Page.Title = "Administrator"
-					aD.Page.Body = "This is the Admin page"
-					dBT, isNotEmpty := dbGetUsers()
-					if isNotEmpty {
-						aD.Table = &dBT
+				userCurrent, isValid := verifyUser(w, r)
+				if isValid && userSession.ID == userCurrent.ID {
+					switch userCurrent.Role {
+					case -7:
+						tmpl = "admin"
+					default:
+						tmpl = "user"
 					}
-				default:
-					tmplStr = "user"
-					aD.Page.Title = aD.User.Name
-					aD.Page.Body = "This is your Home page"
 				}
-				renderTemplate(w, tmplStr, aD)
-				return
 			}
-			w.Write([]byte("Invalid Username"))
-			return
 		}
 	}
+	loadPage(w, tmpl)
+}
+
+func verifyUser(w http.ResponseWriter, r *http.Request) (*AppUser, bool) {
+	if err := r.ParseForm(); err != nil {
+		fmt.Fprintf(w, "ParseForm() err: %v", err)
+		return &AppUser{}, false
+	}
+	uN := r.Form["username"]
+	pW := r.Form["password"]
+
+	pWH := sha1.New()
+	pWH.Write([]byte(pW[0]))
+
+	pWHS := hex.EncodeToString(pWH.Sum(nil))
+
+	user, isValid := dbCheckCredentials(uN[0], pWHS)
+
+	if isValid {
+		return user, true
+	}
+	return &AppUser{}, false
+}
+
+func loadPage(w http.ResponseWriter, tmpl string) {
+	switch tmpl {
+	case "admin":
+		aD.Page.Title = "Administrator"
+		aD.Page.Body = "This is the Admin page"
+		dBT, isNotEmpty := dbGetUsers()
+		if isNotEmpty {
+			aD.Table = &dBT
+		}
+
+	default:
+		aD.Page.Title = aD.User.Name
+		aD.Page.Body = "This is your Home page"
+	}
+	renderTemplate(w, tmpl, aD)
 }
 
 func dbGetUserFromSession(sessionToken string) (*AppUser, bool) {
@@ -235,7 +257,7 @@ func dbGetUserFromSession(sessionToken string) (*AppUser, bool) {
 	}
 	defer db.Close()
 
-	queryString := "select id_user from session where id == \"" + sessionToken + "\""
+	queryString := "select id_user, datetimestamp_lastlogin from session where id == \"" + sessionToken + "\""
 	rows, err := db.Query(queryString)
 	if err != nil {
 		log.Fatal(err)
@@ -245,11 +267,16 @@ func dbGetUserFromSession(sessionToken string) (*AppUser, bool) {
 
 	if rows.Next() {
 		var idUser int
-		err = rows.Scan(&idUser)
+		var dTS string
+		err = rows.Scan(&idUser, &dTS)
 		if err != nil {
 			log.Fatal(err)
 		}
 		aD.User.ID = idUser
+		dTSExpr, _ := strconv.ParseInt(dTS, 10, 64)
+		if isTimeExpired(dTSExpr) {
+			return aD.User, false
+		}
 	} else {
 		return aD.User, false
 	}
@@ -268,7 +295,6 @@ func dbGetUserFromSession(sessionToken string) (*AppUser, bool) {
 		err = rows.Scan(&name, &role)
 		if err != nil {
 			log.Fatal(err)
-			return aD.User, false
 		}
 		aD.User.Name = name
 		aD.User.Role = role
@@ -276,6 +302,14 @@ func dbGetUserFromSession(sessionToken string) (*AppUser, bool) {
 	}
 
 	return aD.User, false
+}
+
+func isTimeExpired(dTSExpr int64) bool {
+	dTSNow := time.Now()
+	if dTSNow.Unix()-dTSExpr > 120 {
+		return true
+	}
+	return false
 }
 
 func setCookie(w http.ResponseWriter) (string, time.Time) {

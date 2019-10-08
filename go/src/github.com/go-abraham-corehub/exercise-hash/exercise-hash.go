@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	getHash("nahar")
+	getHash("abey")
 }
 func getHash(str string) []byte {
 	pW := str
