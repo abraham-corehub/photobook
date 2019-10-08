@@ -39,6 +39,7 @@ type AppData struct {
 
 //PageData is a custom type to store Title and Content / Body of the Web Page to be displayed
 type PageData struct {
+	Name  string
 	Title string
 	Body  string
 }
@@ -100,7 +101,10 @@ func startWebApp() {
 
 	mux.HandleFunc("/", handlerLogin)
 	mux.HandleFunc("/login", handlerAuthenticate)
-	mux.HandleFunc("/admin", handlerAdmin)
+	mux.HandleFunc("/admin/user/view", handlerAdminUserView)
+	//mux.HandleFunc("/admin/user/edit", handlerAdminUserEdit)
+	//mux.HandleFunc("/admin/user/reset", handlerAdminUserReset)
+	//mux.HandleFunc("/admin/user/delete", handlerAdminUserDelete)
 	//mux.HandleFunc("/user", handlerUser)
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }
@@ -144,6 +148,7 @@ func parseTemplates() {
 		"/login",
 		"/admin",
 		"/user",
+		"/adminUserView",
 	}
 
 	for i := 0; i < len(nUITs); i++ {
@@ -162,11 +167,12 @@ func initialize() {
 }
 
 func handlerLogin(w http.ResponseWriter, r *http.Request) {
+	aD.User.Role = 0
 	loadPage(w)
 }
 
-func renderTemplate(w http.ResponseWriter, tmpl string, aD *AppData) {
-	err := templates.ExecuteTemplate(w, tmpl+".html", aD)
+func renderTemplate(w http.ResponseWriter, aD *AppData) {
+	err := templates.ExecuteTemplate(w, aD.Page.Name+".html", aD)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -185,22 +191,67 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handlerAdmin(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "POST" {
-		c, err := r.Cookie("sessionToken")
-		if err != nil {
-			if err == http.ErrNoCookie {
-				http.Redirect(w, r, "/", http.StatusSeeOther)
-				return
-			}
+func handlerAdminUserView(w http.ResponseWriter, r *http.Request) {
+	if isAuthorized(r) {
+		if err := r.ParseForm(); err != nil {
+			fmt.Fprintf(w, "ParseForm() err: %v", err)
+		}
+		idUser := r.Form["id"][0]
+
+		if dbGetAlbums(idUser) {
+			aD.Page.Name = "adminUserView"
 		} else {
-			if dbSetUserFromSession(c.Value) {
-				loadPage(w)
-				return
-			}
+			aD.Page.Name = "admin"
+		}
+		renderTemplate(w, aD)
+	} else {
+		w.Write([]byte("User Not Authrorized!"))
+	}
+}
+
+func dbGetAlbums(idUser string) bool {
+	db, err := sql.Open("sqlite3", pathDB)
+	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "id_user"}}}
+	aD.Table.Rows = make([]RowData, 0)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from album where ` + aD.Table.Header.Row[1].Value + ` == ` + idUser
+	rows, err := db.Query(queryString)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		err = rows.Scan(&name)
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: len(aD.Table.Rows) + 1, Row: []ColData{{Value: name}}})
 		}
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	if len(aD.Table.Rows) > 0 {
+		return true
+	}
+	return false
+}
+
+func isAuthorized(r *http.Request) bool {
+	c, err := r.Cookie("sessionToken")
+	if err != nil {
+		if err == http.ErrNoCookie {
+			return false
+		}
+	} else {
+		if dbSetUserFromSession(c.Value) {
+			return true
+		}
+	}
+	return false
 }
 
 func verifyUser(w http.ResponseWriter, r *http.Request) bool {
@@ -225,17 +276,20 @@ func verifyUser(w http.ResponseWriter, r *http.Request) bool {
 func loadPage(w http.ResponseWriter) {
 	switch aD.User.Role {
 	case 0:
-		renderTemplate(w, "login", aD)
+		aD.Page.Name = "login"
+		renderTemplate(w, aD)
 	case -7:
 		aD.Page.Title = "Administrator"
 		aD.Page.Body = "This is the Admin page"
+		aD.Page.Name = "admin"
 		if dbGetUsers() {
-			renderTemplate(w, "admin", aD)
+			renderTemplate(w, aD)
 		}
 	default:
+		aD.Page.Name = "user"
 		aD.Page.Title = aD.User.Name
 		aD.Page.Body = "This is your Home page"
-		renderTemplate(w, "user", aD)
+		renderTemplate(w, aD)
 	}
 }
 
@@ -362,14 +416,14 @@ func dbCheckCredentials(username string, password string) bool {
 
 func dbGetUsers() bool {
 	db, err := sql.Open("sqlite3", pathDB)
-	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "username"}}}
+	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "id"}, {Index: 1, Value: "name"}, {Index: 2, Value: "username"}}}
 	aD.Table.Rows = make([]RowData, 0)
 
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from user where ` + aD.Table.Header.Row[1].Value + ` != "admin"`
+	queryString := `select ` + aD.Table.Header.Row[0].Value + `, ` + aD.Table.Header.Row[1].Value + ` from user where ` + aD.Table.Header.Row[2].Value + ` != "admin"`
 	rows, err := db.Query(queryString)
 	if err != nil {
 		log.Fatal(err)
@@ -378,11 +432,12 @@ func dbGetUsers() bool {
 	defer rows.Close()
 	for rows.Next() {
 		var name string
-		err = rows.Scan(&name)
+		var id int
+		err = rows.Scan(&id, &name)
 		if err != nil {
 			log.Fatal(err)
 		} else {
-			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: len(aD.Table.Rows) + 1, Row: []ColData{{Value: name}}})
+			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: id, Row: []ColData{{Value: name}}})
 		}
 	}
 	if len(aD.Table.Rows) > 0 {
