@@ -33,11 +33,7 @@ func parseTemplates() {
 		nUITs[i] = dirTmpl + nUITs[i] + ".html"
 	}
 
-	uITemplates = template.Must(template.ParseFiles(
-		nUITs[0],
-		nUITs[1],
-		nUITs[2],
-	))
+	uITemplates = template.Must(template.ParseFiles(nUITs...))
 }
 
 func startWebApp() {

@@ -68,6 +68,13 @@ type ColData struct {
 	Value string
 }
 
+var templates *template.Template
+
+// TemplateData type
+type TemplateData struct {
+	Title string
+}
+
 const dataDir = "data"
 const pageDir = dataDir + "/page"
 const tmplDir = "tmpl/mdl"
@@ -76,7 +83,7 @@ var pathDB = "db/pb.db"
 
 var aD *AppData
 
-var templates = template.Must(template.ParseFiles(tmplDir+"/"+"head.html", tmplDir+"/"+"login.html", tmplDir+"/"+"admin.html"))
+//var templates = template.Must(template.ParseFiles(tmplDir+"/"+"head.html", tmplDir+"/"+"login.html", tmplDir+"/"+"admin.html", tmplDir+"/"+"admin.html"))
 
 func main() {
 	//testFsm()
@@ -119,7 +126,24 @@ func (nfs neuteredFileSystem) Open(path string) (http.File, error) {
 	return f, nil
 }
 
+func parseTemplates() {
+
+	nUITs := []string{
+		"/head",
+		"/login",
+		"/admin",
+		"/user",
+	}
+
+	for i := 0; i < len(nUITs); i++ {
+		nUITs[i] = tmplDir + nUITs[i] + ".html"
+	}
+
+	templates = template.Must(template.ParseFiles(nUITs...))
+}
+
 func initialize() {
+	parseTemplates()
 	aD = &AppData{}
 	aD.User = &AppUser{}
 	aD.Page = &PageData{}
@@ -162,8 +186,6 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 				if isValid {
 					sessionToken, dTSExpr := setCookie(w)
 					dbStoreSession(sessionToken, aD.User, dTSExpr)
-
-					fmt.Println(sessionToken)
 					tmplStr = "admin"
 					aD.Page.Title = "Administrator"
 					aD.Page.Body = "This is the Admin page"
@@ -174,46 +196,49 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 					renderTemplate(w, tmplStr, aD)
 					return
 				}
+			} else {
+				w.WriteHeader(http.StatusBadRequest)
+				return
 			}
-			w.WriteHeader(http.StatusBadRequest)
+		} else {
+			sessionToken = c.Value
+			aD.User, isValid = dbGetUserFromSession(sessionToken)
+			if isValid {
+				switch aD.User.Role {
+				case -7:
+					tmplStr = "admin"
+					aD.Page.Title = "Administrator"
+					aD.Page.Body = "This is the Admin page"
+					dBT, isNotEmpty := dbGetUsers()
+					if isNotEmpty {
+						aD.Table = &dBT
+					}
+				default:
+					tmplStr = "user"
+					aD.Page.Title = aD.User.Name
+					aD.Page.Body = "This is your Home page"
+				}
+				renderTemplate(w, tmplStr, aD)
+				return
+			}
+			w.Write([]byte("Invalid Username"))
 			return
 		}
-		sessionToken = c.Value
-		fmt.Println(sessionToken)
-		aD.User, isValid = dbGetUserFromToken(sessionToken)
-		if isValid {
-			switch aD.User.Role {
-			case -7:
-				tmplStr = "admin"
-				aD.Page.Title = "Administrator"
-				aD.Page.Body = "This is the Admin page"
-				dBT, isNotEmpty := dbGetUsers()
-				if isNotEmpty {
-					aD.Table = &dBT
-				}
-			default:
-				tmplStr = "user"
-				aD.Page.Title = aD.User.Name
-				aD.Page.Body = "This is your Home page"
-			}
-		}
 	}
-	renderTemplate(w, tmplStr, aD)
 }
 
-func dbGetUserFromToken(sessionToken string) (*AppUser, bool) {
+func dbGetUserFromSession(sessionToken string) (*AppUser, bool) {
 	db, err := sql.Open("sqlite3", pathDB)
 	if err != nil {
-		//log.Fatal(err)
+		log.Fatal(err)
 		return aD.User, false
 	}
 	defer db.Close()
 
-	queryString := "select id_user from session where id == " + sessionToken
+	queryString := "select id_user from session where id == \"" + sessionToken + "\""
 	rows, err := db.Query(queryString)
 	if err != nil {
-		//log.Fatal(err)
-		return aD.User, false
+		log.Fatal(err)
 	}
 
 	defer rows.Close()
@@ -222,19 +247,17 @@ func dbGetUserFromToken(sessionToken string) (*AppUser, bool) {
 		var idUser int
 		err = rows.Scan(&idUser)
 		if err != nil {
-			//log.Fatal(err)
-			return aD.User, false
+			log.Fatal(err)
 		}
 		aD.User.ID = idUser
 	} else {
 		return aD.User, false
 	}
 
-	queryString = "select name, role from user where id == " + string(aD.User.ID)
+	queryString = "select name, role from user where id == " + strconv.Itoa(aD.User.ID)
 	rows, err = db.Query(queryString)
 	if err != nil {
-		//log.Fatal(err)
-		return aD.User, false
+		log.Fatal(err)
 	}
 
 	defer rows.Close()
@@ -242,15 +265,13 @@ func dbGetUserFromToken(sessionToken string) (*AppUser, bool) {
 	if rows.Next() {
 		var name string
 		var role int
-		var id int
-		err = rows.Scan(&name, &role, &id)
+		err = rows.Scan(&name, &role)
 		if err != nil {
-			//log.Fatal(err)
+			log.Fatal(err)
 			return aD.User, false
 		}
 		aD.User.Name = name
 		aD.User.Role = role
-		aD.User.ID = id
 		return aD.User, true
 	}
 
@@ -347,7 +368,7 @@ func dbGetUsers() (DBTable, bool) {
 	return dbTable, false
 }
 
-func dbStoreSession(sessionToken string, aD *AppUser, dTSExpr time.Time) {
+func dbStoreSession(sessionToken string, aU *AppUser, dTSExpr time.Time) {
 	db, err := sql.Open("sqlite3", pathDB)
 	if err != nil {
 		log.Fatal(err)
@@ -356,7 +377,7 @@ func dbStoreSession(sessionToken string, aD *AppUser, dTSExpr time.Time) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	result, err := statement.Exec()
+	_, err = statement.Exec()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -365,11 +386,10 @@ func dbStoreSession(sessionToken string, aD *AppUser, dTSExpr time.Time) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	result, err = statement.Exec(sessionToken, strconv.Itoa(aD.ID), strconv.FormatInt(dTSExpr.Unix(), 10))
+	_, err = statement.Exec(sessionToken, strconv.Itoa(aU.ID), strconv.FormatInt(dTSExpr.Unix(), 10))
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(result.LastInsertId())
 }
 
 func conditionString(str string) (string, bool) {
