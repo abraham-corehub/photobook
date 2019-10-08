@@ -1,13 +1,15 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/sha1"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
-	"os/exec"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -137,22 +139,6 @@ func renderTemplate(w http.ResponseWriter, tmpl string, aD *AppData) {
 }
 
 func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
-	/*
-	   	check for sessionToken in cookie
-	   if yes
-	   	validate token from db and get user details
-	   	load authorized page
-	   if no
-	   	get username and password
-	   	validate username and password from db and get user details
-	   	if yes
-	   		generate new token
-	   		store token in client cookie
-	   		load authorized page
-	   	if no
-	   		load login page with login error message
-	*/
-
 	tmplStr := "login"
 	var isValid bool
 	var sessionToken string
@@ -174,7 +160,10 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 
 				aD.User, isValid = dbCheckCredentials(uN[0], pWHS)
 				if isValid {
-					sessionToken = setCookie(w)
+					sessionToken, dTSExpr := setCookie(w)
+					dbStoreSession(sessionToken, aD.User, dTSExpr)
+
+					fmt.Println(sessionToken)
 					tmplStr = "admin"
 					aD.Page.Title = "Administrator"
 					aD.Page.Body = "This is the Admin page"
@@ -182,28 +171,105 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 					if isNotEmpty {
 						aD.Table = &dBT
 					}
+					renderTemplate(w, tmplStr, aD)
+					return
 				}
 			}
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		sessionToken = c.Value
+		fmt.Println(sessionToken)
+		aD.User, isValid = dbGetUserFromToken(sessionToken)
+		if isValid {
+			switch aD.User.Role {
+			case -7:
+				tmplStr = "admin"
+				aD.Page.Title = "Administrator"
+				aD.Page.Body = "This is the Admin page"
+				dBT, isNotEmpty := dbGetUsers()
+				if isNotEmpty {
+					aD.Table = &dBT
+				}
+			default:
+				tmplStr = "user"
+				aD.Page.Title = aD.User.Name
+				aD.Page.Body = "This is your Home page"
+			}
+		}
 	}
 	renderTemplate(w, tmplStr, aD)
 }
 
-func setCookie(w http.ResponseWriter) string {
-	out, err := exec.Command("uuidgen").Output()
+func dbGetUserFromToken(sessionToken string) (*AppUser, bool) {
+	db, err := sql.Open("sqlite3", pathDB)
 	if err != nil {
-		log.Fatal(err)
+		//log.Fatal(err)
+		return aD.User, false
 	}
-	sessionToken := strings.Trim(string(out), "\n")
+	defer db.Close()
+
+	queryString := "select id_user from session where id == " + sessionToken
+	rows, err := db.Query(queryString)
+	if err != nil {
+		//log.Fatal(err)
+		return aD.User, false
+	}
+
+	defer rows.Close()
+
+	if rows.Next() {
+		var idUser int
+		err = rows.Scan(&idUser)
+		if err != nil {
+			//log.Fatal(err)
+			return aD.User, false
+		}
+		aD.User.ID = idUser
+	} else {
+		return aD.User, false
+	}
+
+	queryString = "select name, role from user where id == " + string(aD.User.ID)
+	rows, err = db.Query(queryString)
+	if err != nil {
+		//log.Fatal(err)
+		return aD.User, false
+	}
+
+	defer rows.Close()
+
+	if rows.Next() {
+		var name string
+		var role int
+		var id int
+		err = rows.Scan(&name, &role, &id)
+		if err != nil {
+			//log.Fatal(err)
+			return aD.User, false
+		}
+		aD.User.Name = name
+		aD.User.Role = role
+		aD.User.ID = id
+		return aD.User, true
+	}
+
+	return aD.User, false
+}
+
+func setCookie(w http.ResponseWriter) (string, time.Time) {
+	uuid, err := newUUID()
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+	}
+	sessionToken := uuid
+	dTSExpr := time.Now().Add(120 * time.Second)
 	http.SetCookie(w, &http.Cookie{
 		Name:    "sessionToken",
 		Value:   sessionToken,
-		Expires: time.Now().Add(120 * time.Second),
+		Expires: dTSExpr,
 	})
-	return sessionToken
+	return sessionToken, dTSExpr
 }
 
 func dbCheckCredentials(username string, password string) (*AppUser, bool) {
@@ -281,6 +347,31 @@ func dbGetUsers() (DBTable, bool) {
 	return dbTable, false
 }
 
+func dbStoreSession(sessionToken string, aD *AppUser, dTSExpr time.Time) {
+	db, err := sql.Open("sqlite3", pathDB)
+	if err != nil {
+		log.Fatal(err)
+	}
+	statement, err := db.Prepare(`PRAGMA foreign_keys = true;`)
+	if err != nil {
+		log.Fatal(err)
+	}
+	result, err := statement.Exec()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	statement, err = db.Prepare("INSERT INTO session (id, id_user, datetimestamp_lastlogin) VALUES (?, ?, ?)")
+	if err != nil {
+		log.Fatal(err)
+	}
+	result, err = statement.Exec(sessionToken, strconv.Itoa(aD.ID), strconv.FormatInt(dTSExpr.Unix(), 10))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(result.LastInsertId())
+}
+
 func conditionString(str string) (string, bool) {
 	flag := true
 	strN := str
@@ -296,4 +387,19 @@ func conditionString(str string) (string, bool) {
 		flag = false
 	}
 	return str, flag
+}
+
+// newUUID generates a random UUID according to RFC 4122
+// https://play.golang.org/p/w7qciopoosz
+func newUUID() (string, error) {
+	uuid := make([]byte, 16)
+	n, err := io.ReadFull(rand.Reader, uuid)
+	if n != len(uuid) || err != nil {
+		return "", err
+	}
+	// variant bits; see section 4.1.1
+	uuid[8] = uuid[8]&^0xc0 | 0x80
+	// version 4 (pseudo-random); see section 4.1.3
+	uuid[6] = uuid[6]&^0xf0 | 0x40
+	return fmt.Sprintf("%x-%x-%x-%x-%x", uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:]), nil
 }
