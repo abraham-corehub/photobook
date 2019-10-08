@@ -93,13 +93,14 @@ func main() {
 
 func startWebApp() {
 	parseTemplates()
+	initialize()
 	mux := http.NewServeMux()
 	fileServer := http.FileServer(neuteredFileSystem{http.Dir(tmplDir + "/static/")})
 	mux.Handle("/static/", http.StripPrefix("/static/", fileServer))
 
 	mux.HandleFunc("/", handlerLogin)
 	mux.HandleFunc("/login", handlerAuthenticate)
-	//mux.HandleFunc("/admin", handlerAdmin)
+	mux.HandleFunc("/admin", handlerAdmin)
 	//mux.HandleFunc("/user", handlerUser)
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }
@@ -161,8 +162,6 @@ func initialize() {
 }
 
 func handlerLogin(w http.ResponseWriter, r *http.Request) {
-	initialize()
-	http.SetCookie(w, &http.Cookie{})
 	loadPage(w)
 }
 
@@ -181,26 +180,27 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 		} else {
 			w.Write([]byte("Invalid Username / Password"))
 		}
-		/*
-			c, err := r.Cookie("sessionToken")
-			if err != nil {
-				if err == http.ErrNoCookie {
-					if verifyUser(w, r) {
-						dbStoreSession(setCookie(w))
-						loadPage(w)
-					} else {
-						w.Write([]byte("Invalid Username / Password"))
-					}
-				}
-			} else {
-				if dbSetUserFromSession(c.Value) {
-					loadPage(w)
-				}
-			}
-		*/
 	} else {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	}
+}
+
+func handlerAdmin(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		c, err := r.Cookie("sessionToken")
+		if err != nil {
+			if err == http.ErrNoCookie {
+				http.Redirect(w, r, "/", http.StatusSeeOther)
+				return
+			}
+		} else {
+			if dbSetUserFromSession(c.Value) {
+				loadPage(w)
+				return
+			}
+		}
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func verifyUser(w http.ResponseWriter, r *http.Request) bool {
