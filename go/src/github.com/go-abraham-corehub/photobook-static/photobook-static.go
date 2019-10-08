@@ -92,13 +92,15 @@ func main() {
 }
 
 func startWebApp() {
-	initialize()
+	parseTemplates()
 	mux := http.NewServeMux()
 	fileServer := http.FileServer(neuteredFileSystem{http.Dir(tmplDir + "/static/")})
 	mux.Handle("/static/", http.StripPrefix("/static/", fileServer))
 
 	mux.HandleFunc("/", handlerLogin)
 	mux.HandleFunc("/login", handlerAuthenticate)
+	//mux.HandleFunc("/admin", handlerAdmin)
+	//mux.HandleFunc("/user", handlerUser)
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }
 
@@ -151,15 +153,17 @@ func parseTemplates() {
 }
 
 func initialize() {
-	parseTemplates()
 	aD = &AppData{}
 	aD.User = &AppUser{}
 	aD.Page = &PageData{}
+	aD.Table = &DBTable{}
 	aD.Title = "PhotoBook"
 }
 
 func handlerLogin(w http.ResponseWriter, r *http.Request) {
-	loadPage(w, "login")
+	initialize()
+	http.SetCookie(w, &http.Cookie{})
+	loadPage(w)
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl string, aD *AppData) {
@@ -170,51 +174,39 @@ func renderTemplate(w http.ResponseWriter, tmpl string, aD *AppData) {
 }
 
 func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
-	tmpl := "login"
-	var isValid bool
-	var sessionToken string
 	if r.Method == "POST" {
-		c, err := r.Cookie("sessionToken")
-		if err != nil {
-			if err == http.ErrNoCookie {
-				aD.User, isValid = verifyUser(w, r)
-				if isValid {
-					sessionToken, dTSExpr := setCookie(w)
-					dbStoreSession(sessionToken, aD.User, dTSExpr)
-					switch aD.User.Role {
-					case -7:
-						tmpl = "admin"
-					default:
-						tmpl = "user"
-					}
-				} else {
-					w.Write([]byte("Invalid Username / Password"))
-					return
-				}
-			}
+		if verifyUser(w, r) {
+			dbStoreSession(setCookie(w))
+			loadPage(w)
 		} else {
-			sessionToken = c.Value
-			userSession, isValid := dbGetUserFromSession(sessionToken)
-			if isValid {
-				userCurrent, isValid := verifyUser(w, r)
-				if isValid && userSession.ID == userCurrent.ID {
-					switch userCurrent.Role {
-					case -7:
-						tmpl = "admin"
-					default:
-						tmpl = "user"
+			w.Write([]byte("Invalid Username / Password"))
+		}
+		/*
+			c, err := r.Cookie("sessionToken")
+			if err != nil {
+				if err == http.ErrNoCookie {
+					if verifyUser(w, r) {
+						dbStoreSession(setCookie(w))
+						loadPage(w)
+					} else {
+						w.Write([]byte("Invalid Username / Password"))
 					}
 				}
+			} else {
+				if dbSetUserFromSession(c.Value) {
+					loadPage(w)
+				}
 			}
-		}
+		*/
+	} else {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 	}
-	loadPage(w, tmpl)
 }
 
-func verifyUser(w http.ResponseWriter, r *http.Request) (*AppUser, bool) {
+func verifyUser(w http.ResponseWriter, r *http.Request) bool {
 	if err := r.ParseForm(); err != nil {
 		fmt.Fprintf(w, "ParseForm() err: %v", err)
-		return &AppUser{}, false
+		return false
 	}
 	uN := r.Form["username"]
 	pW := r.Form["password"]
@@ -224,36 +216,34 @@ func verifyUser(w http.ResponseWriter, r *http.Request) (*AppUser, bool) {
 
 	pWHS := hex.EncodeToString(pWH.Sum(nil))
 
-	user, isValid := dbCheckCredentials(uN[0], pWHS)
-
-	if isValid {
-		return user, true
+	if dbCheckCredentials(uN[0], pWHS) {
+		return true
 	}
-	return &AppUser{}, false
+	return false
 }
 
-func loadPage(w http.ResponseWriter, tmpl string) {
-	switch tmpl {
-	case "admin":
+func loadPage(w http.ResponseWriter) {
+	switch aD.User.Role {
+	case 0:
+		renderTemplate(w, "login", aD)
+	case -7:
 		aD.Page.Title = "Administrator"
 		aD.Page.Body = "This is the Admin page"
-		dBT, isNotEmpty := dbGetUsers()
-		if isNotEmpty {
-			aD.Table = &dBT
+		if dbGetUsers() {
+			renderTemplate(w, "admin", aD)
 		}
-
 	default:
 		aD.Page.Title = aD.User.Name
 		aD.Page.Body = "This is your Home page"
+		renderTemplate(w, "user", aD)
 	}
-	renderTemplate(w, tmpl, aD)
 }
 
-func dbGetUserFromSession(sessionToken string) (*AppUser, bool) {
+func dbSetUserFromSession(sessionToken string) bool {
 	db, err := sql.Open("sqlite3", pathDB)
 	if err != nil {
 		log.Fatal(err)
-		return aD.User, false
+		return false
 	}
 	defer db.Close()
 
@@ -275,10 +265,10 @@ func dbGetUserFromSession(sessionToken string) (*AppUser, bool) {
 		aD.User.ID = idUser
 		dTSExpr, _ := strconv.ParseInt(dTS, 10, 64)
 		if isTimeExpired(dTSExpr) {
-			return aD.User, false
+			return false
 		}
 	} else {
-		return aD.User, false
+		return false
 	}
 
 	queryString = "select name, role from user where id == " + strconv.Itoa(aD.User.ID)
@@ -298,10 +288,10 @@ func dbGetUserFromSession(sessionToken string) (*AppUser, bool) {
 		}
 		aD.User.Name = name
 		aD.User.Role = role
-		return aD.User, true
+		return true
 	}
 
-	return aD.User, false
+	return false
 }
 
 func isTimeExpired(dTSExpr int64) bool {
@@ -318,16 +308,16 @@ func setCookie(w http.ResponseWriter) (string, time.Time) {
 		fmt.Printf("error: %v\n", err)
 	}
 	sessionToken := uuid
-	dTSExpr := time.Now().Add(120 * time.Second)
+	dTSNow := time.Now()
 	http.SetCookie(w, &http.Cookie{
 		Name:    "sessionToken",
 		Value:   sessionToken,
-		Expires: dTSExpr,
+		Expires: dTSNow.Add(120 * time.Second),
 	})
-	return sessionToken, dTSExpr
+	return sessionToken, dTSNow
 }
 
-func dbCheckCredentials(username string, password string) (*AppUser, bool) {
+func dbCheckCredentials(username string, password string) bool {
 	db, err := sql.Open("sqlite3", pathDB)
 	if err != nil {
 		log.Fatal(err)
@@ -361,26 +351,25 @@ func dbCheckCredentials(username string, password string) (*AppUser, bool) {
 					aD.User.Name = name
 					aD.User.Role = role
 					aD.User.ID = id
-					return aD.User, true
+					return true
 				}
 			}
 		}
 	}
 
-	return aD.User, false
+	return false
 }
 
-func dbGetUsers() (DBTable, bool) {
+func dbGetUsers() bool {
 	db, err := sql.Open("sqlite3", pathDB)
-	dbTable := DBTable{}
-	dbTable.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "username"}}}
-	dbTable.Rows = make([]RowData, 0)
+	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "username"}}}
+	aD.Table.Rows = make([]RowData, 0)
 
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	queryString := `select ` + dbTable.Header.Row[0].Value + ` from user where ` + dbTable.Header.Row[1].Value + ` != "admin"`
+	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from user where ` + aD.Table.Header.Row[1].Value + ` != "admin"`
 	rows, err := db.Query(queryString)
 	if err != nil {
 		log.Fatal(err)
@@ -393,16 +382,16 @@ func dbGetUsers() (DBTable, bool) {
 		if err != nil {
 			log.Fatal(err)
 		} else {
-			dbTable.Rows = append(dbTable.Rows, RowData{Index: len(dbTable.Rows) + 1, Row: []ColData{{Value: name}}})
+			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: len(aD.Table.Rows) + 1, Row: []ColData{{Value: name}}})
 		}
 	}
-	if len(dbTable.Rows) > 0 {
-		return dbTable, true
+	if len(aD.Table.Rows) > 0 {
+		return true
 	}
-	return dbTable, false
+	return false
 }
 
-func dbStoreSession(sessionToken string, aU *AppUser, dTSExpr time.Time) {
+func dbStoreSession(sessionToken string, dTSExpr time.Time) {
 	db, err := sql.Open("sqlite3", pathDB)
 	if err != nil {
 		log.Fatal(err)
@@ -420,7 +409,7 @@ func dbStoreSession(sessionToken string, aU *AppUser, dTSExpr time.Time) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	_, err = statement.Exec(sessionToken, strconv.Itoa(aU.ID), strconv.FormatInt(dTSExpr.Unix(), 10))
+	_, err = statement.Exec(sessionToken, strconv.Itoa(aD.User.ID), strconv.FormatInt(dTSExpr.Unix(), 10))
 	if err != nil {
 		log.Fatal(err)
 	}
