@@ -2,58 +2,45 @@
 <html lang="en">
 
 <head>
-    <title>{{.Title}}</title>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css?family=Pacifico&display=swap" rel="stylesheet">
-    
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
-    
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/material-components-web/3.2.0/material-components-web.min.css" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/material-components-web/3.2.0/material-components-web.min.js"></script>
-    
-    
-    <link href="static/material.css" rel="stylesheet" type="text/css">
-    <script src="static/material.js"></script>
-    <script src="static/photobook-login.js"></script>
+  <title>{{.Title}}</title>
+  {{ template "head" }}
 </head>
 
 <body>
-    <div class="mdl-grid">
-        <div class="mdl-cell" style="padding-top: 40px; text-align: center; margin:auto">
-            <div>
-                <i class="material-icons" style="font-size: 70px; color:  rgb(13, 112, 158)">collections</i>
+  <div class="mdl-grid">
+    <div class="mdl-cell" style="padding-top: 40px; text-align: center; margin:auto">
+      <div>
+        <i class="material-icons" style="font-size: 70px; color:  rgb(13, 112, 158)">collections</i>
+      </div>
+
+      <div style="font-family: 'Pacifico', cursive; font-size: 30px; padding:20px; color:  rgb(13, 112, 158)">
+        {{.Title}}</div>
+      <div style="padding-top: 40px">
+        <form action="/login" method="post" style="text-align: center">
+          <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+            <input class="mdl-textfield__input" type="text" id="username" name="username">
+            <label class="mdl-textfield__label" for="username">Username...</label>
+          </div>
+          <div>
+            <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
+              <input class="mdl-textfield__input" type="password" pattern="-?[0-9|a-z|A-Z]*(\.[0-9|a-z|A-Z]+)?"
+                id="password" name="password">
+              <label class="mdl-textfield__label" for="password">Password...</label>
+              <span class="mdl-textfield__error">Password must contain Numbers or Alphabets!</span>
             </div>
+          </div>
+          <div style="padding-top: 20px">
+            <button class="mdl-button mdl-js-button mdl-button--fab mdl-js-ripple-effect"
+              style="background-color: rgb(13, 112, 158); color:  rgb(255, 255, 255)">
+              <i class="material-icons">done</i>
+            </button>
+          </div>
+        </form>
 
-            <div style="font-family: 'Pacifico', cursive; font-size: 30px; padding:20px; color:  rgb(13, 112, 158)">
-                {{.Title}}</div>
-            <div style="padding-top: 40px">
-                <form action="/authenticate" method="post" style="text-align: center">
-                    <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
-                        <input class="mdl-textfield__input" type="text" id="username" name="username">
-                        <label class="mdl-textfield__label" for="username">Username...</label>
-                    </div>
-                    <div>
-                        <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
-                            <input class="mdl-textfield__input" type="password" pattern="-?[0-9|a-z|A-Z]*(\.[0-9|a-z|A-Z]+)?" id="password" name="password">
-                            <label class="mdl-textfield__label" for="password">Password...</label>
-                            <span class="mdl-textfield__error">Password must contain Numbers or Alphabets!</span>
-                        </div>
-                    </div>
-                    <div style="padding-top: 20px">
-                        <button class="mdl-button mdl-js-button mdl-button--fab mdl-js-ripple-effect"
-                            style="background-color: rgb(13, 112, 158); color:  rgb(255, 255, 255)">
-                            <i class="material-icons">done</i>
-                        </button>
-                    </div>
-                </form>
+      </div>
 
-            </div>
-
-        </div>
     </div>
+  </div>
 </body>
 
 </html>

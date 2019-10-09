@@ -1,16 +1,19 @@
 package main
 
 import (
+	"bytes"
+	"crypto/rand"
 	"crypto/sha1"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"text/template"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -22,8 +25,8 @@ type Response struct {
 
 //MenuItems is a custom type to store Menu items loaded dynamicaly on the Web Page's Header Bar
 type MenuItems struct {
-	Items string
-	Flag  bool
+	Item string
+	Link string
 }
 
 //AppData is a custom type to store the Data related to the Application
@@ -33,12 +36,15 @@ type AppData struct {
 	MenuItemsRight []MenuItems
 	Page           *PageData
 	Table          *DBTable
+	State          string
 }
 
 //PageData is a custom type to store Title and Content / Body of the Web Page to be displayed
 type PageData struct {
+	Name  string
 	Title string
 	Body  string
+	ID    int
 }
 
 //AppUser is a custom type to store the User's Name and access level (Role)
@@ -66,120 +72,53 @@ type ColData struct {
 	Value string
 }
 
-// appFSM holds the State Transition Table and
-// State Assignment Mappings which defines the State Machine
-type appFSM struct {
-	state string
-	mSTD  map[cSIn]byte   // Maps current states to next states for predefined inputs
-	mSTX  map[byte]byte   // Maps current states to next states without considering inputs
-	mS2ID map[string]byte // Maps State Names to State IDs
-	mID2S map[byte]string // Maps State IDs to State Names
-}
+var templates *template.Template
 
-type cSIn struct {
-	cS byte
-	in byte
+// TemplateData type
+type TemplateData struct {
+	Title string
 }
 
 const dataDir = "data"
 const pageDir = dataDir + "/page"
 const tmplDir = "tmpl/mdl"
 
-var fsm appFSM
-
-// sTT defines the State Transitions for every client request (ajax) corresponding to the current server state.
-// current page at client side as remembered by the server, ajax input value sent by client, next page to be sent to client
-var sTT = [][]string{
-	{"login", "1", "home-admin"},
-	{"login", "2", "home-user"},
-
-	{"home-admin", "0", "login"},
-	{"home-admin", "1", "home-admin-createUser"},
-	{"home-admin", "2", "home-admin-viewUser"},
-	{"home-admin", "3", "home-admin-updateUser"},
-	{"home-admin", "4", "home-admin-resetUser"},
-	{"home-admin", "5", "home-admin-deleteUser"},
-
-	{"home-admin-createUser", "0", "login"},
-	{"home-admin-createUser", "1", "home-admin"},
-	{"home-admin-createUser", "2", "home-admin"},
-
-	{"home-admin-viewUser", "0", "login"},
-	{"home-admin-updateUser", "0", "login"},
-	{"home-admin-resetUser", "0", "login"},
-	{"home-admin-deleteUser", "0", "login"},
-
-	{"home-user", "0", "login"},
-}
-
 var pathDB = "db/pb.db"
 
 var aD *AppData
 
-var templates = template.Must(template.ParseFiles(tmplDir+"/"+"login.html", tmplDir+"/"+"home.html"))
-
 func main() {
-	//testFsm()
 	startWebApp()
-}
-
-func testFsm() {
-	fsm = fsm.createStateTable(sTT)
-	fsm.state = "login"
-	fsm.state = fsm.run("1")
-	fmt.Println(fsm.state)
-	fsm.state = fsm.run("4")
-	fmt.Println(fsm.state)
-	fsm.state = fsm.run("1")
-	fmt.Println(fsm.state)
+	/*
+		dTSExpr := time.Now().Add(-100 * time.Second).Unix()
+		fmt.Println(isTimeExpired(dTSExpr))
+	*/
 }
 
 func startWebApp() {
+	parseTemplates()
+	initialize()
 	mux := http.NewServeMux()
 	fileServer := http.FileServer(neuteredFileSystem{http.Dir(tmplDir + "/static/")})
 	mux.Handle("/static/", http.StripPrefix("/static/", fileServer))
 
 	mux.HandleFunc("/", handlerLogin)
-	mux.HandleFunc("/authenticate", handlerAuthenticate)
-	mux.HandleFunc("/ajax", handlerAjax)
+	mux.HandleFunc("/login", handlerAuthenticate)
+	mux.HandleFunc("/logout", handlerLogout)
+	mux.HandleFunc("/user/view", handlerViewUser)
+	mux.HandleFunc("/album/view", handlerViewAlbum)
+	//mux.HandleFunc("/admin/user/edit", handlerAdminUserEdit)
+	//mux.HandleFunc("/admin/user/reset", handlerAdminUserReset)
+	//mux.HandleFunc("/admin/user/delete", handlerAdminUserDelete)
+	//mux.HandleFunc("/user", handlerUser)
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }
 
-// AJAX Request Handler https://github.com/ET-CS/golang-response-examples/blob/master/ajax-json.go
-func handlerAjax(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		fmt.Fprintf(w, "ParseForm() err: %v", err)
-		return
-	}
-
-	taskID := r.Form["ID"]
-	indexTableRow := r.Form["Data[]"]
-	//fsm.state = fsm.run(taskID[0])
-	//fmt.Println(fsm.state)
-	dataStr := []string{}
-	if len(taskID) > 0 && len(indexTableRow) > 0 {
-		dataStr = []string{
-			taskID[0],
-			indexTableRow[0],
-		}
-	} else if len(taskID) > 0 {
-		dataStr = []string{
-			taskID[0],
-		}
-	} else {
-		dataStr = []string{
-			indexTableRow[0],
-		}
-	}
-
-	jsonEncoder := json.NewEncoder(w)
-	response := Response{Data: dataStr}
-	w.Header().Set("Content-Type", "application/json")
-	err := jsonEncoder.Encode(response)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+func getTimeStamp(t time.Time) string {
+	tD := t.Format("20060102")
+	tT := strings.Replace(t.Format("15.04.05.000"), ".", "", 3)
+	dTS := tD + tT
+	return dTS
 }
 
 //To disable Directory Listing
@@ -207,55 +146,332 @@ func (nfs neuteredFileSystem) Open(path string) (http.File, error) {
 	return f, nil
 }
 
-func init() {
+func parseTemplates() {
+
+	nUITs := []string{
+		"head",
+		"login",
+		"home",
+		"users",
+		"albums",
+		"images",
+	}
+
+	for i := 0; i < len(nUITs); i++ {
+		nUITs[i] = tmplDir + "/" + nUITs[i] + ".html"
+	}
+
+	templates = template.Must(template.ParseFiles(nUITs...))
+}
+
+func initialize() {
 	aD = &AppData{}
 	aD.User = &AppUser{}
 	aD.Page = &PageData{}
+	aD.Table = &DBTable{}
 	aD.Title = "PhotoBook"
 }
 
 func handlerLogin(w http.ResponseWriter, r *http.Request) {
-	state := "login"
-	aD, err := loadPage(state, "", 0)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	renderTemplate(w, state, aD)
+	aD.User.Role = 0
+	aD.State = "login"
+	loadPage(w)
+}
+
+func handlerLogout(w http.ResponseWriter, r *http.Request) {
+	dbClearCookie()
+	initialize()
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
-	var err error
-	state := "login"
-	var isValid bool
-	switch r.Method {
-	case "POST":
-		if err := r.ParseForm(); err != nil {
-			fmt.Fprintf(w, "ParseForm() err: %v", err)
-			return
+	if r.Method == "POST" {
+		if verifyUser(w, r) {
+			aD.State = "home"
+			dbStoreSession(setCookie(w))
+			switch aD.User.Role {
+			case -7:
+				aD.Page.Name = "users"
+				aD.Page.Title = "Dashboard"
+				dbGetUsers()
+			default:
+				aD.Page.Name = "albums"
+				aD.Page.Title = "My Albums"
+				aD.Page.ID = aD.User.ID
+				dbGetAlbums()
+			}
+			loadPage(w)
+		} else {
+			w.Write([]byte("Invalid Username / Password"))
 		}
-		uN := r.Form["username"]
-		pW := r.Form["password"]
-
-		pWH := sha1.New()
-		pWH.Write([]byte(pW[0]))
-
-		pWHS := hex.EncodeToString(pWH.Sum(nil))
-
-		aD.User, isValid = dbCheckCredentials(uN[0], pWHS)
-		if isValid {
-			state = "home"
-		}
-		aD, err = loadPage(state, aD.User.Name, aD.User.Role)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+	} else {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 	}
-	renderTemplate(w, state, aD)
 }
 
-func dbCheckCredentials(username string, password string) (*AppUser, bool) {
+func handlerViewUser(w http.ResponseWriter, r *http.Request) {
+	if isAuthorized(r) {
+		if err := r.ParseForm(); err != nil {
+			fmt.Fprintf(w, "ParseForm() err: %v", err)
+		}
+		aD.Page.ID, _ = strconv.Atoi(r.Form["id"][0])
+		name := r.Form["name"][0]
+		dbGetAlbums()
+		aD.Page.Name = "albums"
+		aD.Page.Title = name + "'s Albums"
+		aD.State = "home"
+		loadPage(w)
+	} else {
+		w.Write([]byte("User Not Authrorized!"))
+	}
+}
+
+func handlerViewAlbum(w http.ResponseWriter, r *http.Request) {
+	if isAuthorized(r) {
+		if err := r.ParseForm(); err != nil {
+			fmt.Fprintf(w, "ParseForm() err: %v", err)
+		}
+		idAlbum := r.Form["id"][0]
+		aD.Page.Name = "images"
+		dbGetImages(idAlbum)
+		loadPage(w)
+
+	} else {
+		w.Write([]byte("User Not Authrorized!"))
+	}
+}
+
+func renderTemplate(w http.ResponseWriter) {
+	err := templates.ExecuteTemplate(w, aD.State+".html", aD)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func loadMenuItems() {
+	switch aD.User.Role {
+	case -7:
+		aD.MenuItemsRight = []MenuItems{
+			{Item: "Create User", Link: "/createUser"},
+			{Item: "Upload Image", Link: "/uploadImage"},
+			{Item: "Create Album", Link: "/createAlbum"},
+			{Item: "Download Album", Link: "/downloadAlbum"},
+		}
+	default:
+		aD.Page.ID = aD.User.ID
+		aD.MenuItemsRight = []MenuItems{
+			{Item: "Upload Image", Link: "/uploadImage"},
+			{Item: "Create Album", Link: "/createAlbum"},
+			{Item: "Download Album", Link: "/downloadAlbum"},
+		}
+	}
+}
+
+func dbGetAlbums() bool {
+	db, err := sql.Open("sqlite3", pathDB)
+	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "id_user"}}}
+	aD.Table.Rows = make([]RowData, 0)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from album where ` + aD.Table.Header.Row[1].Value + ` == ` + strconv.Itoa(aD.Page.ID)
+	rows, err := db.Query(queryString)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		err = rows.Scan(&name)
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: len(aD.Table.Rows) + 1, Row: []ColData{{Value: name}}})
+		}
+	}
+	if len(aD.Table.Rows) > 0 {
+		return true
+	}
+	return false
+}
+
+func dbGetImages(idAlbum string) bool {
+	db, err := sql.Open("sqlite3", pathDB)
+	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "id_user"}, {Index: 2, Value: "id_album"}}}
+	aD.Table.Rows = make([]RowData, 0)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from image where ` + aD.Table.Header.Row[1].Value + ` == ` + strconv.Itoa(aD.Page.ID) + ` and ` + aD.Table.Header.Row[2].Value + ` == ` + idAlbum
+	rows, err := db.Query(queryString)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		err = rows.Scan(&name)
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: len(aD.Table.Rows) + 1, Row: []ColData{{Value: name}}})
+		}
+	}
+	if len(aD.Table.Rows) > 0 {
+		return true
+	}
+	return false
+}
+
+func dbClearCookie() {
+	db, err := sql.Open("sqlite3", pathDB)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	queryString := `DELETE FROM session where id_user == ` + strconv.Itoa(aD.User.ID)
+	_, err = db.Query(queryString)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func isAuthorized(r *http.Request) bool {
+	c, err := r.Cookie("sessionToken")
+	if err != nil {
+		if err == http.ErrNoCookie {
+			return false
+		}
+	} else {
+		if dbSetUserFromSession(c.Value) {
+			return true
+		}
+	}
+	return false
+}
+
+func verifyUser(w http.ResponseWriter, r *http.Request) bool {
+	if err := r.ParseForm(); err != nil {
+		fmt.Fprintf(w, "ParseForm() err: %v", err)
+		return false
+	}
+	uN := r.Form["username"]
+	pW := r.Form["password"]
+
+	pWH := sha1.New()
+	pWH.Write([]byte(pW[0]))
+
+	pWHS := hex.EncodeToString(pWH.Sum(nil))
+
+	if dbCheckCredentials(uN[0], pWHS) {
+		return true
+	}
+	return false
+}
+
+func loadPage(w http.ResponseWriter) {
+	switch aD.State {
+	case "home":
+		loadMenuItems()
+		aD.Page.loadPageBody()
+	}
+	renderTemplate(w)
+}
+
+func (PageData) loadPageBody() {
+	var tpl bytes.Buffer
+	err := templates.ExecuteTemplate(&tpl, aD.Page.Name+".html", aD)
+	if err != nil {
+		log.Fatal(err)
+	}
+	aD.Page.Body = tpl.String()
+}
+
+func dbSetUserFromSession(sessionToken string) bool {
+	db, err := sql.Open("sqlite3", pathDB)
+	if err != nil {
+		log.Fatal(err)
+		return false
+	}
+	defer db.Close()
+
+	queryString := "select id_user, datetimestamp_lastlogin from session where id == \"" + sessionToken + "\""
+	rows, err := db.Query(queryString)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer rows.Close()
+
+	if rows.Next() {
+		var idUser int
+		var dTS string
+		err = rows.Scan(&idUser, &dTS)
+		if err != nil {
+			log.Fatal(err)
+		}
+		aD.User.ID = idUser
+		dTSExpr, _ := strconv.ParseInt(dTS, 10, 64)
+		if isTimeExpired(dTSExpr) {
+			return false
+		}
+	} else {
+		return false
+	}
+
+	queryString = "select name, role from user where id == " + strconv.Itoa(aD.User.ID)
+	rows, err = db.Query(queryString)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer rows.Close()
+
+	if rows.Next() {
+		var name string
+		var role int
+		err = rows.Scan(&name, &role)
+		if err != nil {
+			log.Fatal(err)
+		}
+		aD.User.Name = name
+		aD.User.Role = role
+		return true
+	}
+
+	return false
+}
+
+func isTimeExpired(dTSExpr int64) bool {
+	dTSNow := time.Now()
+	if dTSNow.Unix()-dTSExpr > 120 {
+		return true
+	}
+	return false
+}
+
+func setCookie(w http.ResponseWriter) (string, time.Time) {
+	uuid, err := newUUID()
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+	}
+	sessionToken := uuid
+	dTSNow := time.Now()
+	http.SetCookie(w, &http.Cookie{
+		Name:    "sessionToken",
+		Value:   sessionToken,
+		Expires: dTSNow.Add(120 * time.Second),
+	})
+	return sessionToken, dTSNow
+}
+
+func dbCheckCredentials(username string, password string) bool {
 	db, err := sql.Open("sqlite3", pathDB)
 	if err != nil {
 		log.Fatal(err)
@@ -289,26 +505,25 @@ func dbCheckCredentials(username string, password string) (*AppUser, bool) {
 					aD.User.Name = name
 					aD.User.Role = role
 					aD.User.ID = id
-					return aD.User, true
+					return true
 				}
 			}
 		}
 	}
 
-	return aD.User, false
+	return false
 }
 
-func dbGetUsers() (DBTable, bool) {
+func dbGetUsers() bool {
 	db, err := sql.Open("sqlite3", pathDB)
-	dbTable := DBTable{}
-	dbTable.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "username"}}}
-	dbTable.Rows = make([]RowData, 0)
+	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "id"}, {Index: 1, Value: "name"}, {Index: 2, Value: "username"}}}
+	aD.Table.Rows = make([]RowData, 0)
 
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	queryString := `select ` + dbTable.Header.Row[0].Value + ` from user where ` + dbTable.Header.Row[1].Value + ` != "admin"`
+	queryString := `select ` + aD.Table.Header.Row[0].Value + `, ` + aD.Table.Header.Row[1].Value + ` from user where ` + aD.Table.Header.Row[2].Value + ` != "admin"`
 	rows, err := db.Query(queryString)
 	if err != nil {
 		log.Fatal(err)
@@ -317,17 +532,42 @@ func dbGetUsers() (DBTable, bool) {
 	defer rows.Close()
 	for rows.Next() {
 		var name string
-		err = rows.Scan(&name)
+		var id int
+		err = rows.Scan(&id, &name)
 		if err != nil {
 			log.Fatal(err)
 		} else {
-			dbTable.Rows = append(dbTable.Rows, RowData{Index: len(dbTable.Rows) + 1, Row: []ColData{{Value: name}}})
+			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: id, Row: []ColData{{Value: name}}})
 		}
 	}
-	if len(dbTable.Rows) > 0 {
-		return dbTable, true
+	if len(aD.Table.Rows) > 0 {
+		return true
 	}
-	return dbTable, false
+	return false
+}
+
+func dbStoreSession(sessionToken string, dTSExpr time.Time) {
+	db, err := sql.Open("sqlite3", pathDB)
+	if err != nil {
+		log.Fatal(err)
+	}
+	statement, err := db.Prepare(`PRAGMA foreign_keys = true;`)
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = statement.Exec()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	statement, err = db.Prepare("INSERT INTO session (id, id_user, datetimestamp_lastlogin) VALUES (?, ?, ?)")
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = statement.Exec(sessionToken, strconv.Itoa(aD.User.ID), strconv.FormatInt(dTSExpr.Unix(), 10))
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func conditionString(str string) (string, bool) {
@@ -347,146 +587,17 @@ func conditionString(str string) (string, bool) {
 	return str, flag
 }
 
-func loadPage(state string, user string, role int) (*AppData, error) {
-	aD.User.Name = user
-	aD.User.Role = role
-	fsm.state = state
-	var nameFilePageContent string
-	switch fsm.state {
-	case "home":
-		switch aD.User.Role {
-		case -7:
-			nameFilePageContent = "home-admin"
-			aD.MenuItemsRight = []MenuItems{
-				{Items: "Create User"},
-				{Items: "Upload Image"},
-				{Items: "Create Album"},
-				{Items: "Download Album"},
-			}
-			aD.Page.Title = "Administrator"
-
-			dBT, isNotEmpty := dbGetUsers()
-			if isNotEmpty {
-				aD.Table = &dBT
-			}
-
-		default:
-			aD.Table = &DBTable{}
-			nameFilePageContent = "home-user"
-			aD.MenuItemsRight = []MenuItems{
-				{Items: "Upload Image"},
-				{Items: "Create Album"},
-				{Items: "Download Album"},
-			}
-			aD.Page.Title = aD.User.Name
-		}
-	default:
-		nameFilePageContent = "login"
+// newUUID generates a random UUID according to RFC 4122
+// https://play.golang.org/p/w7qciopoosz
+func newUUID() (string, error) {
+	uuid := make([]byte, 16)
+	n, err := io.ReadFull(rand.Reader, uuid)
+	if n != len(uuid) || err != nil {
+		return "", err
 	}
-	filename := pageDir + "/content-" + nameFilePageContent + ".txt"
-	body, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-	aD.Page.Body = string(body)
-	return aD, nil
-}
-
-func renderTemplate(w http.ResponseWriter, tmpl string, aD *AppData) {
-	err := templates.ExecuteTemplate(w, tmpl+".html", aD)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-func testDb() {
-	db, err := sql.Open("sqlite3", pathDB)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-
-	rows, err := db.Query("select * from user")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	defer rows.Close()
-	for rows.Next() {
-		var un string
-		var pw string
-		err = rows.Scan(&un, &pw)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println(un, pw)
-	}
-}
-
-func (fsm appFSM) run(fsmInput string) string {
-	nS, prs := fsm.mSTD[cSIn{fsm.mS2ID[fsm.state], fsm.mS2ID[fsmInput]}]
-	if prs {
-		fsm.state = fsm.mID2S[nS]
-	} else {
-		nS, prs = fsm.mSTX[fsm.mS2ID[fsm.state]]
-		if prs {
-			fsm.state = fsm.mID2S[nS]
-		}
-	}
-	return fsm.state
-}
-
-func (fsm appFSM) createStateTable(sTT [][]string) appFSM {
-	table := make([][]string, 0)
-	col := make([]string, 0)
-
-	for _, row := range sTT {
-		col = append(col, []string{row[0], row[1], row[2]}...)
-		table = append(table, row)
-	}
-
-	//fmt.Println(table)
-	states := unique(col)
-	//fmt.Println(states)
-	fsm.mS2ID = make(map[string]byte)
-	fsm.mID2S = make(map[byte]string)
-	for i, state := range states {
-		fsm.mS2ID[state] = byte(i)
-		fsm.mID2S[byte(i)] = state
-	}
-
-	//fmt.Println(fsm.mID2S)
-	//fmt.Println(fsm.mS2ID)
-	fsm.mSTD = make(map[cSIn]byte)
-	fsm.mSTX = make(map[byte]byte)
-
-	for _, row := range table {
-		if row[1] != "0" {
-			fsm.mSTD[cSIn{fsm.mS2ID[row[0]], fsm.mS2ID[row[1]]}] = fsm.mS2ID[row[2]]
-		} else {
-			fsm.mSTX[fsm.mS2ID[row[0]]] = fsm.mS2ID[row[2]]
-		}
-	}
-	//fsm.showMapTable()
-	//fmt.Println(fsm.mID2S, fsm.mSTD, fsm.mSTX)
-	return fsm
-}
-
-func (fsm appFSM) showMapTable() {
-	for a, v := range fsm.mSTD {
-		fmt.Println(a.cS, a.in, v)
-	}
-}
-
-//unique https://www.golangprograms.com/remove-duplicate-values-from-slice.html
-func unique(stringSlice []string) []string {
-	keys := make(map[string]bool)
-	list := []string{}
-	for _, entry := range stringSlice {
-		if _, value := keys[entry]; !value {
-			keys[entry] = true
-			list = append(list, entry)
-		}
-	}
-	return list
+	// variant bits; see section 4.1.1
+	uuid[8] = uuid[8]&^0xc0 | 0x80
+	// version 4 (pseudo-random); see section 4.1.3
+	uuid[6] = uuid[6]&^0xf0 | 0x40
+	return fmt.Sprintf("%x-%x-%x-%x-%x", uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:]), nil
 }
