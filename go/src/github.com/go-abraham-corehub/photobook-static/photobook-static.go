@@ -101,7 +101,9 @@ func startWebApp() {
 
 	mux.HandleFunc("/", handlerLogin)
 	mux.HandleFunc("/login", handlerAuthenticate)
-	mux.HandleFunc("/admin/user/view", handlerAdminUserView)
+	mux.HandleFunc("/logout", handlerLogout)
+	mux.HandleFunc("/user/view", handlerViewUser)
+	mux.HandleFunc("/album/view", handlerViewAlbum)
 	//mux.HandleFunc("/admin/user/edit", handlerAdminUserEdit)
 	//mux.HandleFunc("/admin/user/reset", handlerAdminUserReset)
 	//mux.HandleFunc("/admin/user/delete", handlerAdminUserDelete)
@@ -145,10 +147,10 @@ func parseTemplates() {
 
 	nUITs := []string{
 		"/head",
+		"/header",
 		"/login",
 		"/admin",
 		"/user",
-		"/adminUserView",
 	}
 
 	for i := 0; i < len(nUITs); i++ {
@@ -171,7 +173,7 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 	loadPage(w)
 }
 
-func renderTemplate(w http.ResponseWriter, aD *AppData) {
+func renderTemplate(w http.ResponseWriter) {
 	err := templates.ExecuteTemplate(w, aD.Page.Name+".html", aD)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -191,21 +193,56 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handlerAdminUserView(w http.ResponseWriter, r *http.Request) {
+func handlerLogout(w http.ResponseWriter, r *http.Request) {
+	dbClearCookie()
+	initialize()
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func handlerViewUser(w http.ResponseWriter, r *http.Request) {
 	if isAuthorized(r) {
 		if err := r.ParseForm(); err != nil {
 			fmt.Fprintf(w, "ParseForm() err: %v", err)
 		}
 		idUser := r.Form["id"][0]
-
 		if dbGetAlbums(idUser) {
-			aD.Page.Name = "adminUserView"
+			aD.Page.Name = "user"
 		} else {
-			aD.Page.Name = "admin"
+			aD.Page.Name = aD.User.role2Str()
 		}
-		renderTemplate(w, aD)
+		renderTemplate(w)
 	} else {
 		w.Write([]byte("User Not Authrorized!"))
+	}
+}
+
+func handlerViewAlbum(w http.ResponseWriter, r *http.Request) {
+	if isAuthorized(r) {
+		if err := r.ParseForm(); err != nil {
+			fmt.Fprintf(w, "ParseForm() err: %v", err)
+		}
+		idAlbum := r.Form["id"][0]
+
+		if dbGetImages(idAlbum) {
+			aD.Page.Name = "user"
+		} else {
+			aD.Page.Name = aD.User.role2Str()
+		}
+		renderTemplate(w)
+
+	} else {
+		w.Write([]byte("User Not Authrorized!"))
+	}
+}
+
+func (AppUser) role2Str() string {
+	switch aD.User.Role {
+	case 0:
+		return "anonymous"
+	case -7:
+		return "admin"
+	default:
+		return "user"
 	}
 }
 
@@ -238,6 +275,51 @@ func dbGetAlbums(idUser string) bool {
 		return true
 	}
 	return false
+}
+
+func dbGetImages(idAlbum string) bool {
+	db, err := sql.Open("sqlite3", pathDB)
+	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "id_user"}, {Index: 2, Value: "id_album"}}}
+	aD.Table.Rows = make([]RowData, 0)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from image where ` + aD.Table.Header.Row[1].Value + ` == ` + strconv.Itoa(aD.User.ID) + ` and ` + aD.Table.Header.Row[2].Value + ` == ` + idAlbum
+	fmt.Println(queryString)
+	rows, err := db.Query(queryString)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		err = rows.Scan(&name)
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: len(aD.Table.Rows) + 1, Row: []ColData{{Value: name}}})
+		}
+	}
+	if len(aD.Table.Rows) > 0 {
+		return true
+	}
+	return false
+}
+
+func dbClearCookie() {
+	db, err := sql.Open("sqlite3", pathDB)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	queryString := `DELETE FROM session where id_user == ` + strconv.Itoa(aD.User.ID)
+	_, err = db.Query(queryString)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func isAuthorized(r *http.Request) bool {
@@ -277,19 +359,19 @@ func loadPage(w http.ResponseWriter) {
 	switch aD.User.Role {
 	case 0:
 		aD.Page.Name = "login"
-		renderTemplate(w, aD)
+		renderTemplate(w)
 	case -7:
 		aD.Page.Title = "Administrator"
 		aD.Page.Body = "This is the Admin page"
 		aD.Page.Name = "admin"
 		if dbGetUsers() {
-			renderTemplate(w, aD)
+			renderTemplate(w)
 		}
 	default:
 		aD.Page.Name = "user"
 		aD.Page.Title = aD.User.Name
 		aD.Page.Body = "This is your Home page"
-		renderTemplate(w, aD)
+		renderTemplate(w)
 	}
 }
 
