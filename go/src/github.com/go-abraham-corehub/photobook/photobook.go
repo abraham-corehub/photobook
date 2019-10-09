@@ -41,16 +41,22 @@ type AppData struct {
 
 //PageData is a custom type to store Title and Content / Body of the Web Page to be displayed
 type PageData struct {
-	Name  string
-	Title string
-	Body  string
-	ID    int
+	Name   string
+	Title  string
+	Body   string
+	Author *PageAuthor
 }
 
 //AppUser is a custom type to store the User's Name and access level (Role)
 type AppUser struct {
 	Name string
 	Role int
+	ID   int
+}
+
+//PageAuthor is a custom type to store the User's Name and access level (Role)
+type PageAuthor struct {
+	Name string
 	ID   int
 }
 
@@ -107,6 +113,7 @@ func startWebApp() {
 	mux.HandleFunc("/logout", handlerLogout)
 	mux.HandleFunc("/user/view", handlerViewUser)
 	mux.HandleFunc("/album/view", handlerViewAlbum)
+	mux.HandleFunc("/image/view", handlerViewImage)
 	//mux.HandleFunc("/admin/user/edit", handlerAdminUserEdit)
 	//mux.HandleFunc("/admin/user/reset", handlerAdminUserReset)
 	//mux.HandleFunc("/admin/user/delete", handlerAdminUserDelete)
@@ -169,6 +176,7 @@ func initialize() {
 	aD.User = &AppUser{}
 	aD.Page = &PageData{}
 	aD.Table = &DBTable{}
+	aD.Page.Author = &PageAuthor{}
 	aD.Title = "PhotoBook"
 }
 
@@ -197,7 +205,8 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 			default:
 				aD.Page.Name = "albums"
 				aD.Page.Title = "My Albums"
-				aD.Page.ID = aD.User.ID
+				aD.Page.Author.ID = aD.User.ID
+				aD.Page.Author.Name = aD.User.Name
 				dbGetAlbums()
 			}
 			loadPage(w)
@@ -214,15 +223,16 @@ func handlerViewUser(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			fmt.Fprintf(w, "ParseForm() err: %v", err)
 		}
-		aD.Page.ID, _ = strconv.Atoi(r.Form["id"][0])
-		name := r.Form["name"][0]
+
+		aD.Page.Author.ID, _ = strconv.Atoi(r.Form.Get("id"))
+		aD.Page.Author.Name = r.Form.Get("name")
 		dbGetAlbums()
 		aD.Page.Name = "albums"
-		aD.Page.Title = name + "'s Albums"
+		aD.Page.Title = aD.Page.Author.Name + "'s Albums"
 		aD.State = "home"
 		loadPage(w)
 	} else {
-		w.Write([]byte("User Not Authrorized!"))
+		showNotAuthorized(w)
 	}
 }
 
@@ -231,14 +241,38 @@ func handlerViewAlbum(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			fmt.Fprintf(w, "ParseForm() err: %v", err)
 		}
-		idAlbum := r.Form["id"][0]
+		idAlbum := r.Form.Get("id")
+		nameAlbum := r.Form.Get("name")
 		aD.Page.Name = "images"
+		aD.Page.Title = aD.Page.Author.Name + "'s " + nameAlbum
 		dbGetImages(idAlbum)
+		aD.State = "home"
 		loadPage(w)
-
 	} else {
-		w.Write([]byte("User Not Authrorized!"))
+		showNotAuthorized(w)
 	}
+}
+
+func handlerViewImage(w http.ResponseWriter, r *http.Request) {
+	if isAuthorized(r) {
+		if err := r.ParseForm(); err != nil {
+			fmt.Fprintf(w, "ParseForm() err: %v", err)
+		}
+		idAlbum := r.Form.Get("id")
+		nameAlbum := r.Form.Get("name")
+		aD.Page.Name = "images"
+		aD.Page.Title = aD.Page.Author.Name + "'s " + nameAlbum
+		dbGetImages(idAlbum)
+		aD.State = "home"
+		loadPage(w)
+	} else {
+		showNotAuthorized(w)
+	}
+}
+
+func showNotAuthorized(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, "<center><p>User Not Authrorized!</p><br><a href=\"/\">Login</a></center>")
 }
 
 func renderTemplate(w http.ResponseWriter) {
@@ -258,7 +292,7 @@ func loadMenuItems() {
 			{Item: "Download Album", Link: "/downloadAlbum"},
 		}
 	default:
-		aD.Page.ID = aD.User.ID
+		aD.Page.Author.ID = aD.User.ID
 		aD.MenuItemsRight = []MenuItems{
 			{Item: "Upload Image", Link: "/uploadImage"},
 			{Item: "Create Album", Link: "/createAlbum"},
@@ -276,7 +310,7 @@ func dbGetAlbums() bool {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from album where ` + aD.Table.Header.Row[1].Value + ` == ` + strconv.Itoa(aD.Page.ID)
+	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from album where ` + aD.Table.Header.Row[1].Value + ` == ` + strconv.Itoa(aD.Page.Author.ID)
 	rows, err := db.Query(queryString)
 	if err != nil {
 		log.Fatal(err)
@@ -307,7 +341,7 @@ func dbGetImages(idAlbum string) bool {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from image where ` + aD.Table.Header.Row[1].Value + ` == ` + strconv.Itoa(aD.Page.ID) + ` and ` + aD.Table.Header.Row[2].Value + ` == ` + idAlbum
+	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from image where ` + aD.Table.Header.Row[1].Value + ` == ` + strconv.Itoa(aD.Page.Author.ID) + ` and ` + aD.Table.Header.Row[2].Value + ` == ` + idAlbum
 	rows, err := db.Query(queryString)
 	if err != nil {
 		log.Fatal(err)
