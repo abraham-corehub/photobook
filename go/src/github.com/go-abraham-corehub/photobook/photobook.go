@@ -183,20 +183,32 @@ func initialize() {
 func handlerLogin(w http.ResponseWriter, r *http.Request) {
 	aD.User.Role = 0
 	aD.State = "login"
+	clearCookie(w)
 	loadPage(w)
 }
 
 func handlerLogout(w http.ResponseWriter, r *http.Request) {
 	dbClearCookie()
+	clearCookie(w)
 	initialize()
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func clearCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:    "sessionToken",
+		Value:   "",
+		Expires: time.Now(),
+	})
 }
 
 func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		if verifyUser(w, r) {
 			aD.State = "home"
-			dbStoreSession(setCookie(w))
+			if !isAuthorized(r) {
+				dbStoreSession(setCookie(w))
+			}
 			switch aD.User.Role {
 			case -7:
 				aD.Page.Name = "users"
@@ -369,7 +381,8 @@ func dbClearCookie() {
 		log.Fatal(err)
 	}
 
-	queryString := `DELETE FROM session where id_user == ` + strconv.Itoa(aD.User.ID)
+	queryString := `delete from session where id_user == ` + strconv.Itoa(aD.User.ID)
+	fmt.Println(queryString)
 	_, err = db.Query(queryString)
 	if err != nil {
 		log.Fatal(err)
