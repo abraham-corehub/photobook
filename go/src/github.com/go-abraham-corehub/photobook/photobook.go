@@ -188,38 +188,31 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlerLogout(w http.ResponseWriter, r *http.Request) {
-	dbClearCookie()
+	dbClearCookie(w)
 	clearCookie(w)
 	initialize()
 	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
-func clearCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:    "sessionToken",
-		Value:   "",
-		Expires: time.Now(),
-	})
 }
 
 func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		if verifyUser(w, r) {
 			aD.State = "home"
-			if !isAuthorized(r) {
-				dbStoreSession(setCookie(w))
+			if !isAuthorized(w, r) {
+				sessionToken, dTSExpr := setCookie(w)
+				dbStoreSession(w, sessionToken, dTSExpr)
 			}
 			switch aD.User.Role {
 			case -7:
 				aD.Page.Name = "users"
 				aD.Page.Title = "Dashboard"
-				dbGetUsers()
+				dbGetUsers(w)
 			default:
 				aD.Page.Name = "albums"
 				aD.Page.Title = "My Albums"
 				aD.Page.Author.ID = aD.User.ID
 				aD.Page.Author.Name = aD.User.Name
-				dbGetAlbums()
+				dbGetAlbums(w)
 			}
 			loadPage(w)
 		} else {
@@ -231,14 +224,14 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlerViewUser(w http.ResponseWriter, r *http.Request) {
-	if isAuthorized(r) {
+	if isAuthorized(w, r) {
 		if err := r.ParseForm(); err != nil {
 			fmt.Fprintf(w, "ParseForm() err: %v", err)
 		}
 
 		aD.Page.Author.ID, _ = strconv.Atoi(r.Form.Get("id"))
 		aD.Page.Author.Name = r.Form.Get("name")
-		dbGetAlbums()
+		dbGetAlbums(w)
 		aD.Page.Name = "albums"
 		aD.Page.Title = aD.Page.Author.Name + "'s Albums"
 		aD.State = "home"
@@ -249,7 +242,7 @@ func handlerViewUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlerViewAlbum(w http.ResponseWriter, r *http.Request) {
-	if isAuthorized(r) {
+	if isAuthorized(w, r) {
 		if err := r.ParseForm(); err != nil {
 			fmt.Fprintf(w, "ParseForm() err: %v", err)
 		}
@@ -257,7 +250,7 @@ func handlerViewAlbum(w http.ResponseWriter, r *http.Request) {
 		nameAlbum := r.Form.Get("name")
 		aD.Page.Name = "images"
 		aD.Page.Title = aD.Page.Author.Name + "'s " + nameAlbum
-		dbGetImages(idAlbum)
+		dbGetImages(w, idAlbum)
 		aD.State = "home"
 		loadPage(w)
 	} else {
@@ -266,7 +259,7 @@ func handlerViewAlbum(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlerViewImage(w http.ResponseWriter, r *http.Request) {
-	if isAuthorized(r) {
+	if isAuthorized(w, r) {
 		if err := r.ParseForm(); err != nil {
 			fmt.Fprintf(w, "ParseForm() err: %v", err)
 		}
@@ -274,7 +267,7 @@ func handlerViewImage(w http.ResponseWriter, r *http.Request) {
 		nameAlbum := r.Form.Get("name")
 		aD.Page.Name = "images"
 		aD.Page.Title = aD.Page.Author.Name + "'s " + nameAlbum
-		dbGetImages(idAlbum)
+		dbGetImages(w, idAlbum)
 		aD.State = "home"
 		loadPage(w)
 	} else {
@@ -282,14 +275,28 @@ func handlerViewImage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func clearCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:    "sessionToken",
+		Value:   "",
+		Expires: time.Now(),
+	})
+}
+
 func showNotAuthorized(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, "<center><p>User Not Authrorized!</p><br><a href=\"/\">Login</a></center>")
 }
 
+func showError(w http.ResponseWriter, err error) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, "<center><p>Error!"+err.Error()+"</p><br><a href=\"/\">Login</a></center>")
+}
+
 func renderTemplate(w http.ResponseWriter) {
 	err := templates.ExecuteTemplate(w, aD.State+".html", aD)
 	if err != nil {
+		showError(w, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -313,18 +320,20 @@ func loadMenuItems() {
 	}
 }
 
-func dbGetAlbums() bool {
+func dbGetAlbums(w http.ResponseWriter) bool {
 	db, err := sql.Open("sqlite3", pathDB)
 	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "id_user"}}}
 	aD.Table.Rows = make([]RowData, 0)
 
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 	defer db.Close()
 	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from album where ` + aD.Table.Header.Row[1].Value + ` == ` + strconv.Itoa(aD.Page.Author.ID)
 	rows, err := db.Query(queryString)
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 
@@ -333,6 +342,7 @@ func dbGetAlbums() bool {
 		var name string
 		err = rows.Scan(&name)
 		if err != nil {
+			showError(w, err)
 			log.Fatal(err)
 		} else {
 			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: len(aD.Table.Rows) + 1, Row: []ColData{{Value: name}}})
@@ -344,18 +354,20 @@ func dbGetAlbums() bool {
 	return false
 }
 
-func dbGetImages(idAlbum string) bool {
+func dbGetImages(w http.ResponseWriter, idAlbum string) bool {
 	db, err := sql.Open("sqlite3", pathDB)
 	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "id_user"}, {Index: 2, Value: "id_album"}}}
 	aD.Table.Rows = make([]RowData, 0)
 
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 	defer db.Close()
 	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from image where ` + aD.Table.Header.Row[1].Value + ` == ` + strconv.Itoa(aD.Page.Author.ID) + ` and ` + aD.Table.Header.Row[2].Value + ` == ` + idAlbum
 	rows, err := db.Query(queryString)
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 
@@ -364,6 +376,7 @@ func dbGetImages(idAlbum string) bool {
 		var name string
 		err = rows.Scan(&name)
 		if err != nil {
+			showError(w, err)
 			log.Fatal(err)
 		} else {
 			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: len(aD.Table.Rows) + 1, Row: []ColData{{Value: name}}})
@@ -375,9 +388,10 @@ func dbGetImages(idAlbum string) bool {
 	return false
 }
 
-func dbClearCookie() {
+func dbClearCookie(w http.ResponseWriter) {
 	db, err := sql.Open("sqlite3", pathDB)
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 
@@ -385,18 +399,19 @@ func dbClearCookie() {
 	fmt.Println(queryString)
 	_, err = db.Query(queryString)
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 }
 
-func isAuthorized(r *http.Request) bool {
+func isAuthorized(w http.ResponseWriter, r *http.Request) bool {
 	c, err := r.Cookie("sessionToken")
 	if err != nil {
 		if err == http.ErrNoCookie {
 			return false
 		}
 	} else {
-		if dbSetUserFromSession(c.Value) {
+		if dbSetUserFromSession(w, c.Value) {
 			return true
 		}
 	}
@@ -405,6 +420,7 @@ func isAuthorized(r *http.Request) bool {
 
 func verifyUser(w http.ResponseWriter, r *http.Request) bool {
 	if err := r.ParseForm(); err != nil {
+		showError(w, err)
 		fmt.Fprintf(w, "ParseForm() err: %v", err)
 		return false
 	}
@@ -416,7 +432,7 @@ func verifyUser(w http.ResponseWriter, r *http.Request) bool {
 
 	pWHS := hex.EncodeToString(pWH.Sum(nil))
 
-	if dbCheckCredentials(uN[0], pWHS) {
+	if dbCheckCredentials(w, uN[0], pWHS) {
 		return true
 	}
 	return false
@@ -426,23 +442,25 @@ func loadPage(w http.ResponseWriter) {
 	switch aD.State {
 	case "home":
 		loadMenuItems()
-		aD.Page.loadPageBody()
+		aD.Page.loadPageBody(w)
 	}
 	renderTemplate(w)
 }
 
-func (PageData) loadPageBody() {
+func (PageData) loadPageBody(w http.ResponseWriter) {
 	var tpl bytes.Buffer
 	err := templates.ExecuteTemplate(&tpl, aD.Page.Name+".html", aD)
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 	aD.Page.Body = tpl.String()
 }
 
-func dbSetUserFromSession(sessionToken string) bool {
+func dbSetUserFromSession(w http.ResponseWriter, sessionToken string) bool {
 	db, err := sql.Open("sqlite3", pathDB)
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 		return false
 	}
@@ -451,6 +469,7 @@ func dbSetUserFromSession(sessionToken string) bool {
 	queryString := "select id_user, datetimestamp_lastlogin from session where id == \"" + sessionToken + "\""
 	rows, err := db.Query(queryString)
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 
@@ -461,6 +480,7 @@ func dbSetUserFromSession(sessionToken string) bool {
 		var dTS string
 		err = rows.Scan(&idUser, &dTS)
 		if err != nil {
+			showError(w, err)
 			log.Fatal(err)
 		}
 		aD.User.ID = idUser
@@ -475,6 +495,7 @@ func dbSetUserFromSession(sessionToken string) bool {
 	queryString = "select name, role from user where id == " + strconv.Itoa(aD.User.ID)
 	rows, err = db.Query(queryString)
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 
@@ -485,6 +506,7 @@ func dbSetUserFromSession(sessionToken string) bool {
 		var role int
 		err = rows.Scan(&name, &role)
 		if err != nil {
+			showError(w, err)
 			log.Fatal(err)
 		}
 		aD.User.Name = name
@@ -506,6 +528,7 @@ func isTimeExpired(dTSExpr int64) bool {
 func setCookie(w http.ResponseWriter) (string, time.Time) {
 	uuid, err := newUUID()
 	if err != nil {
+		showError(w, err)
 		fmt.Printf("error: %v\n", err)
 	}
 	sessionToken := uuid
@@ -518,9 +541,10 @@ func setCookie(w http.ResponseWriter) (string, time.Time) {
 	return sessionToken, dTSNow
 }
 
-func dbCheckCredentials(username string, password string) bool {
+func dbCheckCredentials(w http.ResponseWriter, username string, password string) bool {
 	db, err := sql.Open("sqlite3", pathDB)
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 	defer db.Close()
@@ -536,6 +560,7 @@ func dbCheckCredentials(username string, password string) bool {
 			queryString := "select name, role, id from user where username == " + username + " and password == " + password
 			rows, err := db.Query(queryString)
 			if err != nil {
+				showError(w, err)
 				log.Fatal(err)
 			}
 
@@ -547,6 +572,7 @@ func dbCheckCredentials(username string, password string) bool {
 				var id int
 				err = rows.Scan(&name, &role, &id)
 				if err != nil {
+					showError(w, err)
 					log.Fatal(err)
 				} else {
 					aD.User.Name = name
@@ -561,18 +587,20 @@ func dbCheckCredentials(username string, password string) bool {
 	return false
 }
 
-func dbGetUsers() bool {
+func dbGetUsers(w http.ResponseWriter) bool {
 	db, err := sql.Open("sqlite3", pathDB)
 	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "id"}, {Index: 1, Value: "name"}, {Index: 2, Value: "username"}}}
 	aD.Table.Rows = make([]RowData, 0)
 
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 	defer db.Close()
 	queryString := `select ` + aD.Table.Header.Row[0].Value + `, ` + aD.Table.Header.Row[1].Value + ` from user where ` + aD.Table.Header.Row[2].Value + ` != "admin"`
 	rows, err := db.Query(queryString)
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 
@@ -582,6 +610,7 @@ func dbGetUsers() bool {
 		var id int
 		err = rows.Scan(&id, &name)
 		if err != nil {
+			showError(w, err)
 			log.Fatal(err)
 		} else {
 			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: id, Row: []ColData{{Value: name}}})
@@ -593,26 +622,31 @@ func dbGetUsers() bool {
 	return false
 }
 
-func dbStoreSession(sessionToken string, dTSExpr time.Time) {
+func dbStoreSession(w http.ResponseWriter, sessionToken string, dTSExpr time.Time) {
 	db, err := sql.Open("sqlite3", pathDB)
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 	statement, err := db.Prepare(`PRAGMA foreign_keys = true;`)
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 	_, err = statement.Exec()
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 
 	statement, err = db.Prepare("INSERT INTO session (id, id_user, datetimestamp_lastlogin) VALUES (?, ?, ?)")
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 	_, err = statement.Exec(sessionToken, strconv.Itoa(aD.User.ID), strconv.FormatInt(dTSExpr.Unix(), 10))
 	if err != nil {
+		showError(w, err)
 		log.Fatal(err)
 	}
 }
