@@ -45,13 +45,17 @@ type PageData struct {
 	Title  string
 	Body   string
 	Author *PageAuthor
+	Error  string
 }
 
 //AppUser is a custom type to store the User's Name and access level (Role)
 type AppUser struct {
-	Name string
-	Role int
-	ID   int
+	Name     string
+	Role     int
+	ID       int
+	Username string
+	Password string
+	Status   string
 }
 
 //PageAuthor is a custom type to store the User's Name and access level (Role)
@@ -78,8 +82,6 @@ type ColData struct {
 	Value string
 }
 
-var templates *template.Template
-
 // TemplateData type
 type TemplateData struct {
 	Title string
@@ -89,27 +91,25 @@ const dataDir = "data"
 const pageDir = dataDir + "/page"
 const tmplDir = "tmpl/mdl"
 
-var pathDB = "db/pb.db"
+const pathDB = "db/pb.db"
 
+var templates *template.Template
 var aD *AppData
 
 func main() {
-	startWebApp()
-	/*
-		dTSExpr := time.Now().Add(-100 * time.Second).Unix()
-		fmt.Println(isTimeExpired(dTSExpr))
-	*/
+	fmt.Println("Server Started!, Please access http://localhost:8080");
+	startPhotoBook()
 }
 
-func startWebApp() {
+func startPhotoBook() {
 	parseTemplates()
 	initialize()
 	mux := http.NewServeMux()
 	fileServer := http.FileServer(neuteredFileSystem{http.Dir(tmplDir + "/static/")})
 	mux.Handle("/static/", http.StripPrefix("/static/", fileServer))
 
-	mux.HandleFunc("/", handlerLogin)
-	mux.HandleFunc("/login", handlerAuthenticate)
+	mux.HandleFunc("/", handlerRoot)
+	mux.HandleFunc("/login", handlerLogin)
 	mux.HandleFunc("/logout", handlerLogout)
 	mux.HandleFunc("/user/view", handlerViewUser)
 	mux.HandleFunc("/album/view", handlerViewAlbum)
@@ -121,40 +121,7 @@ func startWebApp() {
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }
 
-func getTimeStamp(t time.Time) string {
-	tD := t.Format("20060102")
-	tT := strings.Replace(t.Format("15.04.05.000"), ".", "", 3)
-	dTS := tD + tT
-	return dTS
-}
-
-//To disable Directory Listing
-//https://www.alexedwards.net/blog/disable-http-fileserver-directory-listings
-type neuteredFileSystem struct {
-	fs http.FileSystem
-}
-
-//To disable Directory Listing
-//https://www.alexedwards.net/blog/disable-http-fileserver-directory-listings
-func (nfs neuteredFileSystem) Open(path string) (http.File, error) {
-	f, err := nfs.fs.Open(path)
-	if err != nil {
-		return nil, err
-	}
-
-	s, err := f.Stat()
-	if s.IsDir() {
-		index := strings.TrimSuffix(path, "/") + "/index.html"
-		if _, err := nfs.fs.Open(index); err != nil {
-			return nil, err
-		}
-	}
-
-	return f, nil
-}
-
 func parseTemplates() {
-
 	nUITs := []string{
 		"head",
 		"login",
@@ -163,11 +130,9 @@ func parseTemplates() {
 		"albums",
 		"images",
 	}
-
 	for i := 0; i < len(nUITs); i++ {
 		nUITs[i] = tmplDir + "/" + nUITs[i] + ".html"
 	}
-
 	templates = template.Must(template.ParseFiles(nUITs...))
 }
 
@@ -180,28 +145,20 @@ func initialize() {
 	aD.Title = "PhotoBook"
 }
 
-func handlerLogin(w http.ResponseWriter, r *http.Request) {
-	aD.User.Role = 0
-	aD.State = "login"
-	clearCookie(w)
-	loadPage(w)
-}
-
-func handlerLogout(w http.ResponseWriter, r *http.Request) {
-	dbClearCookie(w)
+func handlerRoot(w http.ResponseWriter, r *http.Request) {
 	clearCookie(w)
 	initialize()
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	return
 }
 
-func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
+func handlerLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
-		if verifyUser(w, r) {
+		switch validateCredentials(w, r) {
+		case 2:
 			aD.State = "home"
-			if !isAuthorized(w, r) {
-				sessionToken, dTSExpr := setCookie(w)
-				dbStoreSession(w, sessionToken, dTSExpr)
-			}
+			sessionToken, dTSExpr := setCookie(w)
+			dbStoreSession(w, sessionToken, dTSExpr)
 			switch aD.User.Role {
 			case -7:
 				aD.Page.Name = "users"
@@ -215,12 +172,30 @@ func handlerAuthenticate(w http.ResponseWriter, r *http.Request) {
 				dbGetAlbums(w)
 			}
 			loadPage(w)
-		} else {
-			w.Write([]byte("Invalid Username / Password"))
+			return
+		case 1:
+			//showInvalidPassword(w)
+			aD.User.Status = "Non-registered Password!"
+		case 0:
+			//showInvalidUsername(w)
+			aD.User.Status = "Non-registered Username!"
 		}
-	} else {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		aD.User.Role = 0
+		aD.State = "login"
+		loadPage(w)
+		return
 	}
+	clearCookie(w)
+	initialize()
+	aD.User.Role = 0
+	aD.State = "login"
+	loadPage(w)
+}
+
+func handlerLogout(w http.ResponseWriter, r *http.Request) {
+	dbClearCookie(w)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+	return
 }
 
 func handlerViewUser(w http.ResponseWriter, r *http.Request) {
@@ -288,6 +263,16 @@ func showNotAuthorized(w http.ResponseWriter) {
 	fmt.Fprint(w, "<center><p>User Not Authrorized!</p><br><a href=\"/\">Login</a></center>")
 }
 
+func showInvalidUsername(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, "<center><p>Username <i>"+aD.User.Username+"</i> is Invalid!</p><br><a href=\"/\">Login</a></center>")
+}
+
+func showInvalidPassword(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, "<center><p>Password given is wrong for <i>"+aD.User.Username+"<i></p><br><a href=\"/\">Login</a></center>")
+}
+
 func showError(w http.ResponseWriter, err error) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, "<center><p>Error!"+err.Error()+"</p><br><a href=\"/\">Login</a></center>")
@@ -320,119 +305,62 @@ func loadMenuItems() {
 	}
 }
 
-func dbGetAlbums(w http.ResponseWriter) bool {
-	db, err := sql.Open("sqlite3", pathDB)
-	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "id_user"}}}
-	aD.Table.Rows = make([]RowData, 0)
-
-	if err != nil {
-		showError(w, err)
-		log.Fatal(err)
-	}
-	defer db.Close()
-	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from album where ` + aD.Table.Header.Row[1].Value + ` == ` + strconv.Itoa(aD.Page.Author.ID)
-	rows, err := db.Query(queryString)
-	if err != nil {
-		showError(w, err)
-		log.Fatal(err)
-	}
-
-	defer rows.Close()
-	for rows.Next() {
-		var name string
-		err = rows.Scan(&name)
-		if err != nil {
-			showError(w, err)
-			log.Fatal(err)
-		} else {
-			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: len(aD.Table.Rows) + 1, Row: []ColData{{Value: name}}})
-		}
-	}
-	if len(aD.Table.Rows) > 0 {
-		return true
-	}
-	return false
-}
-
-func dbGetImages(w http.ResponseWriter, idAlbum string) bool {
-	db, err := sql.Open("sqlite3", pathDB)
-	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "id_user"}, {Index: 2, Value: "id_album"}}}
-	aD.Table.Rows = make([]RowData, 0)
-
-	if err != nil {
-		showError(w, err)
-		log.Fatal(err)
-	}
-	defer db.Close()
-	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from image where ` + aD.Table.Header.Row[1].Value + ` == ` + strconv.Itoa(aD.Page.Author.ID) + ` and ` + aD.Table.Header.Row[2].Value + ` == ` + idAlbum
-	rows, err := db.Query(queryString)
-	if err != nil {
-		showError(w, err)
-		log.Fatal(err)
-	}
-
-	defer rows.Close()
-	for rows.Next() {
-		var name string
-		err = rows.Scan(&name)
-		if err != nil {
-			showError(w, err)
-			log.Fatal(err)
-		} else {
-			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: len(aD.Table.Rows) + 1, Row: []ColData{{Value: name}}})
-		}
-	}
-	if len(aD.Table.Rows) > 0 {
-		return true
-	}
-	return false
-}
-
-func dbClearCookie(w http.ResponseWriter) {
-	db, err := sql.Open("sqlite3", pathDB)
-	if err != nil {
-		showError(w, err)
-		log.Fatal(err)
-	}
-
-	queryString := `delete from session where id_user == ` + strconv.Itoa(aD.User.ID)
-	fmt.Println(queryString)
-	_, err = db.Query(queryString)
-	if err != nil {
-		showError(w, err)
-		log.Fatal(err)
-	}
-}
-
 func isAuthorized(w http.ResponseWriter, r *http.Request) bool {
 	c, err := r.Cookie("sessionToken")
 	if err != nil {
-		if err == http.ErrNoCookie {
-			return false
-		}
-	} else {
-		if dbSetUserFromSession(w, c.Value) {
-			return true
-		}
+		return !(err == http.ErrNoCookie)
 	}
-	return false
+	return dbSetUserFromSession(w, c.Value)
 }
 
-func verifyUser(w http.ResponseWriter, r *http.Request) bool {
+func validateCredentials(w http.ResponseWriter, r *http.Request) int {
 	if err := r.ParseForm(); err != nil {
 		showError(w, err)
 		fmt.Fprintf(w, "ParseForm() err: %v", err)
-		return false
+		return 0
 	}
-	uN := r.Form["username"]
-	pW := r.Form["password"]
 
-	pWH := sha1.New()
-	pWH.Write([]byte(pW[0]))
+	uN := r.Form.Get("username")
+	pW := r.Form.Get("password")
+	uN, isClean := conditionString(uN)
+	if isClean {
+		aD.User.Username = uN
+		if dbIsUsernameValid(w, uN) {
+			pW, isClean := conditionString(pW)
+			if isClean {
+				aD.User.Password = pW
+				pWH := sha1.New()
+				pWH.Write([]byte(pW))
 
-	pWHS := hex.EncodeToString(pWH.Sum(nil))
+				pWHS := hex.EncodeToString(pWH.Sum(nil))
 
-	if dbCheckCredentials(w, uN[0], pWHS) {
+				if dbCheckCredentials(w, uN, pWHS) {
+					return 2
+				}
+				return 1
+			}
+		}
+	}
+	return 0
+}
+
+func dbIsUsernameValid(w http.ResponseWriter, username string) bool {
+	db, err := sql.Open("sqlite3", pathDB)
+	if err != nil {
+		showError(w, err)
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	uN := "\"" + username + "\""
+	queryString := "select * from user where username == " + uN
+	rows, err := db.Query(queryString)
+	if err != nil {
+		showError(w, err)
+		log.Fatal(err)
+	}
+	defer rows.Close()
+	if rows.Next() {
 		return true
 	}
 	return false
@@ -548,39 +476,31 @@ func dbCheckCredentials(w http.ResponseWriter, username string, password string)
 		log.Fatal(err)
 	}
 	defer db.Close()
-	username, fl := conditionString(username)
-	if fl {
-		username = "\"" + username + "\""
+	username = "\"" + username + "\""
+	password = "\"" + password + "\""
 
-		password, fl = conditionString(password)
+	queryString := "select name, role, id from user where username == " + username + " and password == " + password
+	rows, err := db.Query(queryString)
+	if err != nil {
+		showError(w, err)
+		log.Fatal(err)
+	}
 
-		if fl {
-			password = "\"" + password + "\""
+	defer rows.Close()
 
-			queryString := "select name, role, id from user where username == " + username + " and password == " + password
-			rows, err := db.Query(queryString)
-			if err != nil {
-				showError(w, err)
-				log.Fatal(err)
-			}
-
-			defer rows.Close()
-
-			if rows.Next() {
-				var name string
-				var role int
-				var id int
-				err = rows.Scan(&name, &role, &id)
-				if err != nil {
-					showError(w, err)
-					log.Fatal(err)
-				} else {
-					aD.User.Name = name
-					aD.User.Role = role
-					aD.User.ID = id
-					return true
-				}
-			}
+	if rows.Next() {
+		var name string
+		var role int
+		var id int
+		err = rows.Scan(&name, &role, &id)
+		if err != nil {
+			showError(w, err)
+			log.Fatal(err)
+		} else {
+			aD.User.Name = name
+			aD.User.Role = role
+			aD.User.ID = id
+			return true
 		}
 	}
 
@@ -620,6 +540,89 @@ func dbGetUsers(w http.ResponseWriter) bool {
 		return true
 	}
 	return false
+}
+
+func dbGetAlbums(w http.ResponseWriter) bool {
+	db, err := sql.Open("sqlite3", pathDB)
+	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "id_user"}}}
+	aD.Table.Rows = make([]RowData, 0)
+
+	if err != nil {
+		showError(w, err)
+		log.Fatal(err)
+	}
+	defer db.Close()
+	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from album where ` + aD.Table.Header.Row[1].Value + ` == ` + strconv.Itoa(aD.Page.Author.ID)
+	rows, err := db.Query(queryString)
+	if err != nil {
+		showError(w, err)
+		log.Fatal(err)
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		err = rows.Scan(&name)
+		if err != nil {
+			showError(w, err)
+			log.Fatal(err)
+		} else {
+			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: len(aD.Table.Rows) + 1, Row: []ColData{{Value: name}}})
+		}
+	}
+	if len(aD.Table.Rows) > 0 {
+		return true
+	}
+	return false
+}
+
+func dbGetImages(w http.ResponseWriter, idAlbum string) bool {
+	db, err := sql.Open("sqlite3", pathDB)
+	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "id_user"}, {Index: 2, Value: "id_album"}}}
+	aD.Table.Rows = make([]RowData, 0)
+
+	if err != nil {
+		showError(w, err)
+		log.Fatal(err)
+	}
+	defer db.Close()
+	queryString := `select ` + aD.Table.Header.Row[0].Value + ` from image where ` + aD.Table.Header.Row[1].Value + ` == ` + strconv.Itoa(aD.Page.Author.ID) + ` and ` + aD.Table.Header.Row[2].Value + ` == ` + idAlbum
+	rows, err := db.Query(queryString)
+	if err != nil {
+		showError(w, err)
+		log.Fatal(err)
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		err = rows.Scan(&name)
+		if err != nil {
+			showError(w, err)
+			log.Fatal(err)
+		} else {
+			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: len(aD.Table.Rows) + 1, Row: []ColData{{Value: name}}})
+		}
+	}
+	if len(aD.Table.Rows) > 0 {
+		return true
+	}
+	return false
+}
+
+func dbClearCookie(w http.ResponseWriter) {
+	db, err := sql.Open("sqlite3", pathDB)
+	if err != nil {
+		showError(w, err)
+		log.Fatal(err)
+	}
+	_, err = db.Exec("delete from session where id_user == " + strconv.Itoa(aD.User.ID))
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func dbStoreSession(w http.ResponseWriter, sessionToken string, dTSExpr time.Time) {
@@ -681,4 +684,29 @@ func newUUID() (string, error) {
 	// version 4 (pseudo-random); see section 4.1.3
 	uuid[6] = uuid[6]&^0xf0 | 0x40
 	return fmt.Sprintf("%x-%x-%x-%x-%x", uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:]), nil
+}
+
+//To disable Directory Listing
+//https://www.alexedwards.net/blog/disable-http-fileserver-directory-listings
+type neuteredFileSystem struct {
+	fs http.FileSystem
+}
+
+//To disable Directory Listing
+//https://www.alexedwards.net/blog/disable-http-fileserver-directory-listings
+func (nfs neuteredFileSystem) Open(path string) (http.File, error) {
+	f, err := nfs.fs.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	s, err := f.Stat()
+	if s.IsDir() {
+		index := strings.TrimSuffix(path, "/") + "/index.html"
+		if _, err := nfs.fs.Open(index); err != nil {
+			return nil, err
+		}
+	}
+
+	return f, nil
 }

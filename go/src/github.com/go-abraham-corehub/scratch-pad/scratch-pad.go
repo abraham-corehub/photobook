@@ -6,15 +6,18 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"strings"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 func main() {
-	testDb()
 	hashTest("admin")
 	hashTest("abey")
+	getTimeStamp(time.Now())
 }
+
 func hashTest(str string) []byte {
 	pW := str
 	pWH := sha1.New()
@@ -24,19 +27,6 @@ func hashTest(str string) []byte {
 
 	fmt.Println(pW, pWHS)
 	return []byte(pWHS)
-}
-
-type parseState struct {
-	inTag, isPre, isScript, isStyle, isSpace, isSkip bool
-}
-
-func setParseState(b byte, pS *parseState) {
-	pS.inTag = b>>5&1 == 1
-	pS.isPre = b>>4&1 == 1
-	pS.isScript = b>>3&1 == 1
-	pS.isStyle = b>>2&1 == 1
-	pS.isSpace = b>>1&1 == 1
-	pS.isSkip = b&1 == 1
 }
 
 func testDb() {
@@ -61,4 +51,12 @@ func testDb() {
 		}
 		fmt.Println(un, pw)
 	}
+}
+
+func getTimeStamp(t time.Time) string {
+	tD := t.Format("20060102")
+	tT := strings.Replace(t.Format("15.04.05.000"), ".", "", 3)
+	dTS := tD + tT
+	fmt.Println(dTS)
+	return dTS
 }
