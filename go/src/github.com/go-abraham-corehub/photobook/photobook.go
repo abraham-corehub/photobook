@@ -33,7 +33,7 @@ type MenuItems struct {
 //AppData is a custom type to store the Data related to the Application
 type AppData struct {
 	Title          string
-	User           AppUser
+	User           *AppUser
 	MenuItemsRight []MenuItems
 	Page           PageData
 	Table          DBTable
@@ -145,7 +145,7 @@ func parseTemplates() {
 
 func initApp() {
 	aD = &AppData{}
-	aD.User = AppUser{}
+	aD.User = &AppUser{}
 	aD.Page = PageData{}
 	aD.Table = DBTable{}
 	aD.Page.Author = PageAuthor{}
@@ -177,6 +177,7 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 			aD.State = "home"
 			sessionToken, dTSExpr := setCookie(w)
 			aD.User.SessionToken = sessionToken
+			dbDeleteSession(w)
 			dbStoreSession(w, sessionToken, dTSExpr)
 			switch aD.User.Role {
 			case -7:
