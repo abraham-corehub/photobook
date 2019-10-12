@@ -33,7 +33,7 @@ type MenuItems struct {
 //AppData is a custom type to store the Data related to the Application
 type AppData struct {
 	Title          string
-	User           *AppUser
+	User           AppUser
 	MenuItemsRight []MenuItems
 	Page           PageData
 	Table          DBTable
@@ -96,7 +96,7 @@ const tmplDir = "tmpl/mdl"
 const pathDB = "db/pb.db"
 
 var templates *template.Template
-var aD *AppData
+var aD AppData
 var db *sql.DB
 
 func main() {
@@ -117,9 +117,10 @@ func startPhotoBook() {
 	mux.HandleFunc("/", handlerRoot)
 	mux.HandleFunc("/login", handlerLogin)
 	mux.HandleFunc("/logout", handlerLogout)
+	mux.HandleFunc("/home", handlerHome)
 	mux.HandleFunc("/user/view", handlerViewUser)
 	mux.HandleFunc("/album/view", handlerViewAlbum)
-	mux.HandleFunc("/image/view", handlerViewImage)
+	//mux.HandleFunc("/image/view", handlerViewImage)
 	//mux.HandleFunc("/admin/user/edit", handlerAdminUserEdit)
 	//mux.HandleFunc("/admin/user/reset", handlerAdminUserReset)
 	//mux.HandleFunc("/admin/user/delete", handlerAdminUserDelete)
@@ -144,8 +145,8 @@ func parseTemplates() {
 }
 
 func initApp() {
-	aD = &AppData{}
-	aD.User = &AppUser{}
+	aD = AppData{}
+	aD.User = AppUser{}
 	aD.Page = PageData{}
 	aD.Table = DBTable{}
 	aD.Page.Author = PageAuthor{}
@@ -171,15 +172,45 @@ func handlerRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlerLogin(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "POST" {
-		switch validateCredentials(w, r) {
-		case 2:
-			aD.State = "home"
-			sessionToken, dTSExpr := setCookie(w)
-			aD.User.SessionToken = sessionToken
-			dbDeleteSession(w)
-			dbStoreSession(w, sessionToken, dTSExpr)
-			switch aD.User.Role {
+	if !isAuthorized(w, r) {
+		if r.Method == "POST" {
+			switch validateCredentials(w, r) {
+			case 2:
+				aD.State = "home"
+				sessionToken, dTSExpr := setCookie(w)
+				aD.User.SessionToken = sessionToken
+				dbDeleteSession(w)
+				dbStoreSession(w, sessionToken, dTSExpr)
+				switch aD.User.Role {
+				case -7:
+					aD.Page.Name = "users"
+					aD.Page.Title = "Dashboard"
+					dbGetUsers(w)
+				default:
+					aD.Page.Name = "albums"
+					aD.Page.Title = "My Albums"
+					aD.Page.Author.ID = aD.User.ID
+					aD.Page.Author.Name = aD.User.Name
+					dbGetAlbums(w)
+				}
+			case 1:
+				aD.User.Status = "Non-registered Password!"
+			case 0:
+				aD.User.Status = "Non-registered Username!"
+			}
+		} else {
+			aD.User.Role = 0
+			aD.State = "login"
+		}
+	}	
+	loadPage(w)
+}
+
+func handlerHome(w http.ResponseWriter, r *http.Request) {
+	if !isAuthorized(w, r) {
+		showError(w, errors.New("you are not authorized"))
+	} else {
+		switch aD.User.Role {
 			case -7:
 				aD.Page.Name = "users"
 				aD.Page.Title = "Dashboard"
@@ -191,23 +222,14 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 				aD.Page.Author.Name = aD.User.Name
 				dbGetAlbums(w)
 			}
-		case 1:
-			aD.User.Status = "Non-registered Password!"
-		case 0:
-			aD.User.Status = "Non-registered Username!"
-		}
-	} else {
-		aD.User.Role = 0
-		aD.State = "login"
+		loadPage(w)
 	}
-	loadPage(w)
 }
 
 func handlerLogout(w http.ResponseWriter, r *http.Request) {
 	dbDeleteSession(w)
 	initApp()
 	http.Redirect(w, r, "/", http.StatusSeeOther)
-	return
 }
 
 func handlerViewUser(w http.ResponseWriter, r *http.Request) {
