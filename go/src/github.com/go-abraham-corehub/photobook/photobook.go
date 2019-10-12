@@ -11,11 +11,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	_ "runtime/debug"
 	"strconv"
 	"strings"
 	"text/template"
 	"time"
-	"runtime/debug"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -164,72 +164,66 @@ func initDB() {
 
 func handlerRoot(w http.ResponseWriter, r *http.Request) {
 	if isAuthorized(w, r) {
-		aD.State = "home"
 		loadPage(w,r)
 	} else {
-		initApp()
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	}
 }
 
 func handlerLogin(w http.ResponseWriter, r *http.Request) {
 	if !isAuthorized(w, r) {
+		initApp()
+		aD.State = "login"
 		if r.Method == "POST" {
 			switch validateCredentials(w, r) {
 			case 2:
-				aD.State = "home"
-				sessionToken, dTSExpr := setCookie(w,r)
+				dbDeleteSession(w, r)
+				sessionToken, dTSExpr := setCookie(w, r)
+				dbStoreSession(w, r, sessionToken, dTSExpr)
 				aD.User.SessionToken = sessionToken
-				dbDeleteSession(w,r)
-				dbStoreSession(w, r,sessionToken, dTSExpr)
-				switch aD.User.Role {
-				case -7:
-					aD.Page.Name = "users"
-					aD.Page.Title = "Dashboard"
-					dbGetUsers(w,r)
-				default:
-					aD.Page.Name = "albums"
-					aD.Page.Title = "My Albums"
-					aD.Page.Author.ID = aD.User.ID
-					aD.Page.Author.Name = aD.User.Name
-					dbGetAlbums(w,r)
-				}
+				aD.State = "home"
+				http.Redirect(w, r, "/home", http.StatusSeeOther)
+				return
 			case 1:
 				aD.User.Status = "Non-registered Password!"
 			case 0:
 				aD.User.Status = "Non-registered Username!"
 			}
-		} else {
-			aD.User.Role = 0
-			aD.State = "login"
 		}
-	}	
-	loadPage(w,r)
+		loadPage(w, r)
+	} else {
+		http.Redirect(w, r, "/home", http.StatusSeeOther)
+	}
 }
 
 func handlerHome(w http.ResponseWriter, r *http.Request) {
 	if !isAuthorized(w, r) {
 		showError(w, r, errors.New("session expired"))
 	} else {
+		aD.State = "home"
 		switch aD.User.Role {
-			case -7:
-				aD.Page.Name = "users"
-				aD.Page.Title = "Dashboard"
-				dbGetUsers(w,r)
-			default:
-				aD.Page.Name = "albums"
-				aD.Page.Title = "My Albums"
-				aD.Page.Author.ID = aD.User.ID
-				aD.Page.Author.Name = aD.User.Name
-				dbGetAlbums(w,r)
-			}
-		loadPage(w,r)
+		case -7:
+			aD.Page.Name = "users"
+			aD.Page.Title = "Dashboard"
+			dbGetUsers(w, r)
+		default:
+			aD.Page.Name = "albums"
+			aD.Page.Title = "My Albums"
+			aD.Page.Author.ID = aD.User.ID
+			aD.Page.Author.Name = aD.User.Name
+			dbGetAlbums(w, r)
+		}
+		loadPage(w, r)
 	}
 }
 
 func handlerLogout(w http.ResponseWriter, r *http.Request) {
-	dbDeleteSession(w,r)
-	initApp()
+	dbDeleteSession(w, r)
+	http.SetCookie(w, &http.Cookie{
+		Name:    "sessionToken",
+		Value:   "",
+		MaxAge:  0,
+	})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -240,10 +234,10 @@ func handlerViewUser(w http.ResponseWriter, r *http.Request) {
 		}
 		aD.Page.Author.ID, _ = strconv.Atoi(r.Form.Get("id"))
 		aD.Page.Author.Name = r.Form.Get("name")
-		dbGetAlbums(w,r)
+		dbGetAlbums(w, r)
 		aD.Page.Name = "albums"
 		aD.Page.Title = aD.Page.Author.Name + "'s Albums"
-		loadPage(w,r)
+		loadPage(w, r)
 	} else {
 		showError(w, r, errors.New("session expired"))
 	}
@@ -259,7 +253,7 @@ func handlerViewAlbum(w http.ResponseWriter, r *http.Request) {
 		aD.Page.Name = "images"
 		aD.Page.Title = aD.Page.Author.Name + "'s " + nameAlbum
 		dbGetImages(w, r, idAlbum)
-		loadPage(w,r)
+		loadPage(w, r)
 	} else {
 		showError(w, r, errors.New("session expired"))
 	}
@@ -280,17 +274,17 @@ func handlerViewImage(w http.ResponseWriter, r *http.Request) {
 			loadPage(w)
 		*/
 		aD.Page.Name = "image"
-		loadPage(w,r)
-	} else {	
+		loadPage(w, r)
+	} else {
 		showError(w, r, errors.New("session expired"))
 	}
 }
 
 func showError(w http.ResponseWriter, r *http.Request, err error) {
-	http.Redirect(w, r, "/logout", http.StatusSeeOther)
 	//log.Panicf(err.Error())
 	fmt.Println(err.Error())
-	debug.PrintStack()
+	//debug.PrintStack()
+	http.Redirect(w, r, "/logout", http.StatusSeeOther)
 }
 
 func renderTemplate(w http.ResponseWriter, r *http.Request) {
@@ -321,15 +315,13 @@ func loadMenuItems() {
 
 func isAuthorized(w http.ResponseWriter, r *http.Request) bool {
 	c, err := r.Cookie("sessionToken")
-	if err != nil {
-		if err == http.ErrNoCookie {
-			return false
+	if err == nil {
+		if c.Value == aD.User.SessionToken && aD.User.SessionToken != "" {
+			return true
 		}
+		return dbSetUserFromSession(w, r, c.Value)
 	}
-	if c.Value == aD.User.SessionToken {
-		return true
-	}
-	return dbSetUserFromSession(w, r, c.Value)
+	return false
 }
 
 func validateCredentials(w http.ResponseWriter, r *http.Request) int {
@@ -366,7 +358,9 @@ func loadPage(w http.ResponseWriter, r *http.Request) {
 	switch aD.State {
 	case "home":
 		loadMenuItems()
-		aD.Page.loadPageBody(w,r)
+		aD.Page.loadPageBody(w, r)
+	case "":
+		showError(w,r,errors.New("aD.State not set"))
 	}
 	renderTemplate(w, r)
 }
@@ -582,7 +576,7 @@ func dbDeleteSession(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		showError(w, r, err)
 	}
-	result, err := statement.Exec(aD.User.ID)
+	_, err = statement.Exec(aD.User.ID)
 	if err != nil {
 		showError(w, r, err)
 	}
