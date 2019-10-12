@@ -15,6 +15,7 @@ import (
 	"strings"
 	"text/template"
 	"time"
+	"runtime/debug"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -164,11 +165,11 @@ func initDB() {
 func handlerRoot(w http.ResponseWriter, r *http.Request) {
 	if isAuthorized(w, r) {
 		aD.State = "home"
+		loadPage(w,r)
 	} else {
 		initApp()
-		aD.State = "login"
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	}
-	loadPage(w)
 }
 
 func handlerLogin(w http.ResponseWriter, r *http.Request) {
@@ -177,21 +178,21 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 			switch validateCredentials(w, r) {
 			case 2:
 				aD.State = "home"
-				sessionToken, dTSExpr := setCookie(w)
+				sessionToken, dTSExpr := setCookie(w,r)
 				aD.User.SessionToken = sessionToken
-				dbDeleteSession(w)
-				dbStoreSession(w, sessionToken, dTSExpr)
+				dbDeleteSession(w,r)
+				dbStoreSession(w, r,sessionToken, dTSExpr)
 				switch aD.User.Role {
 				case -7:
 					aD.Page.Name = "users"
 					aD.Page.Title = "Dashboard"
-					dbGetUsers(w)
+					dbGetUsers(w,r)
 				default:
 					aD.Page.Name = "albums"
 					aD.Page.Title = "My Albums"
 					aD.Page.Author.ID = aD.User.ID
 					aD.Page.Author.Name = aD.User.Name
-					dbGetAlbums(w)
+					dbGetAlbums(w,r)
 				}
 			case 1:
 				aD.User.Status = "Non-registered Password!"
@@ -203,31 +204,31 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 			aD.State = "login"
 		}
 	}	
-	loadPage(w)
+	loadPage(w,r)
 }
 
 func handlerHome(w http.ResponseWriter, r *http.Request) {
 	if !isAuthorized(w, r) {
-		showError(w, errors.New("you are not authorized"))
+		showError(w, r, errors.New("session expired"))
 	} else {
 		switch aD.User.Role {
 			case -7:
 				aD.Page.Name = "users"
 				aD.Page.Title = "Dashboard"
-				dbGetUsers(w)
+				dbGetUsers(w,r)
 			default:
 				aD.Page.Name = "albums"
 				aD.Page.Title = "My Albums"
 				aD.Page.Author.ID = aD.User.ID
 				aD.Page.Author.Name = aD.User.Name
-				dbGetAlbums(w)
+				dbGetAlbums(w,r)
 			}
-		loadPage(w)
+		loadPage(w,r)
 	}
 }
 
 func handlerLogout(w http.ResponseWriter, r *http.Request) {
-	dbDeleteSession(w)
+	dbDeleteSession(w,r)
 	initApp()
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -235,39 +236,39 @@ func handlerLogout(w http.ResponseWriter, r *http.Request) {
 func handlerViewUser(w http.ResponseWriter, r *http.Request) {
 	if isAuthorized(w, r) {
 		if err := r.ParseForm(); err != nil {
-			showError(w, err)
+			showError(w, r, err)
 		}
 		aD.Page.Author.ID, _ = strconv.Atoi(r.Form.Get("id"))
 		aD.Page.Author.Name = r.Form.Get("name")
-		dbGetAlbums(w)
+		dbGetAlbums(w,r)
 		aD.Page.Name = "albums"
 		aD.Page.Title = aD.Page.Author.Name + "'s Albums"
-		loadPage(w)
+		loadPage(w,r)
 	} else {
-		showError(w, errors.New("you are not authorized"))
+		showError(w, r, errors.New("session expired"))
 	}
 }
 
 func handlerViewAlbum(w http.ResponseWriter, r *http.Request) {
 	if isAuthorized(w, r) {
 		if err := r.ParseForm(); err != nil {
-			showError(w, err)
+			showError(w, r, err)
 		}
 		idAlbum := r.Form.Get("id")
 		nameAlbum := r.Form.Get("name")
 		aD.Page.Name = "images"
 		aD.Page.Title = aD.Page.Author.Name + "'s " + nameAlbum
-		dbGetImages(w, idAlbum)
-		loadPage(w)
+		dbGetImages(w, r, idAlbum)
+		loadPage(w,r)
 	} else {
-		showError(w, errors.New("you are not authorized"))
+		showError(w, r, errors.New("session expired"))
 	}
 }
 
 func handlerViewImage(w http.ResponseWriter, r *http.Request) {
 	if isAuthorized(w, r) {
 		if err := r.ParseForm(); err != nil {
-			showError(w, err)
+			showError(w, r, err)
 		}
 		/*
 			idImage := r.Form.Get("id")
@@ -279,23 +280,23 @@ func handlerViewImage(w http.ResponseWriter, r *http.Request) {
 			loadPage(w)
 		*/
 		aD.Page.Name = "image"
-		loadPage(w)
-	} else {
-		showError(w, errors.New("you are not authorized"))
+		loadPage(w,r)
+	} else {	
+		showError(w, r, errors.New("session expired"))
 	}
 }
 
-func showError(w http.ResponseWriter, err error) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, "<center><p>Error!"+err.Error()+"</p><br><a href=\"/\">Login</a></center>")
+func showError(w http.ResponseWriter, r *http.Request, err error) {
+	http.Redirect(w, r, "/logout", http.StatusSeeOther)
 	//log.Panicf(err.Error())
+	fmt.Println(err.Error())
+	debug.PrintStack()
 }
 
-func renderTemplate(w http.ResponseWriter) {
+func renderTemplate(w http.ResponseWriter, r *http.Request) {
 	err := templates.ExecuteTemplate(w, aD.State+".html", aD)
 	if err != nil {
-		showError(w, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		showError(w, r, err)
 	}
 }
 
@@ -328,12 +329,12 @@ func isAuthorized(w http.ResponseWriter, r *http.Request) bool {
 	if c.Value == aD.User.SessionToken {
 		return true
 	}
-	return dbSetUserFromSession(w, c.Value)
+	return dbSetUserFromSession(w, r, c.Value)
 }
 
 func validateCredentials(w http.ResponseWriter, r *http.Request) int {
 	if err := r.ParseForm(); err != nil {
-		showError(w, err)
+		showError(w, r, err)
 		return 0
 	}
 
@@ -342,7 +343,7 @@ func validateCredentials(w http.ResponseWriter, r *http.Request) int {
 	uN, isClean := conditionString(uN)
 	if isClean {
 		aD.User.Username = uN
-		if dbIsUsernameValid(w, uN) {
+		if dbIsUsernameValid(w, r, uN) {
 			pW, isClean := conditionString(pW)
 			if isClean {
 				aD.User.Password = pW
@@ -351,7 +352,7 @@ func validateCredentials(w http.ResponseWriter, r *http.Request) int {
 
 				pWHS := hex.EncodeToString(pWH.Sum(nil))
 
-				if dbCheckCredentials(w, uN, pWHS) {
+				if dbCheckCredentials(w, r, uN, pWHS) {
 					return 2
 				}
 				return 1
@@ -361,30 +362,30 @@ func validateCredentials(w http.ResponseWriter, r *http.Request) int {
 	return 0
 }
 
-func loadPage(w http.ResponseWriter) {
+func loadPage(w http.ResponseWriter, r *http.Request) {
 	switch aD.State {
 	case "home":
 		loadMenuItems()
-		aD.Page.loadPageBody(w)
+		aD.Page.loadPageBody(w,r)
 	}
-	renderTemplate(w)
+	renderTemplate(w, r)
 }
 
-func (PageData) loadPageBody(w http.ResponseWriter) {
+func (PageData) loadPageBody(w http.ResponseWriter, r *http.Request) {
 	var tpl bytes.Buffer
 	err := templates.ExecuteTemplate(&tpl, aD.Page.Name+".html", aD)
 	if err != nil {
-		showError(w, err)
+		showError(w, r, err)
 	}
 	aD.Page.Body = tpl.String()
 }
 
-func dbIsUsernameValid(w http.ResponseWriter, username string) bool {
+func dbIsUsernameValid(w http.ResponseWriter, r *http.Request, username string) bool {
 	uN := "\"" + username + "\""
 	queryString := "select * from user where username == " + uN
 	rows, err := db.Query(queryString)
 	if err != nil {
-		showError(w, err)
+		showError(w, r, err)
 	}
 	defer rows.Close()
 	if rows.Next() {
@@ -393,11 +394,11 @@ func dbIsUsernameValid(w http.ResponseWriter, username string) bool {
 	return false
 }
 
-func dbSetUserFromSession(w http.ResponseWriter, sessionToken string) bool {
+func dbSetUserFromSession(w http.ResponseWriter, r *http.Request, sessionToken string) bool {
 	queryString := "select id_user, datetimestamp_lastlogin from session where id == \"" + sessionToken + "\""
 	rows, err := db.Query(queryString)
 	if err != nil {
-		showError(w, err)
+		showError(w, r, err)
 	}
 	defer rows.Close()
 	if rows.Next() {
@@ -405,11 +406,11 @@ func dbSetUserFromSession(w http.ResponseWriter, sessionToken string) bool {
 		var dTS string
 		err = rows.Scan(&idUser, &dTS)
 		if err != nil {
-			showError(w, err)
+			showError(w, r, err)
 		}
 		dTSExpr, _ := strconv.ParseInt(dTS, 10, 64)
 		if isTimeExpired(dTSExpr) {
-			showError(w, errors.New("time expired"))
+			showError(w, r, errors.New("time expired"))
 			return false
 		}
 		aD.User.ID = idUser
@@ -421,7 +422,7 @@ func dbSetUserFromSession(w http.ResponseWriter, sessionToken string) bool {
 	queryString = "select name, role from user where id == " + strconv.Itoa(aD.User.ID)
 	rows, err = db.Query(queryString)
 	if err != nil {
-		showError(w, err)
+		showError(w, r, err)
 	}
 	defer rows.Close()
 	if rows.Next() {
@@ -429,7 +430,7 @@ func dbSetUserFromSession(w http.ResponseWriter, sessionToken string) bool {
 		var role int
 		err = rows.Scan(&name, &role)
 		if err != nil {
-			showError(w, err)
+			showError(w, r, err)
 		}
 		aD.User.Name = name
 		aD.User.Role = role
@@ -446,10 +447,10 @@ func isTimeExpired(dTSExpr int64) bool {
 	return false
 }
 
-func setCookie(w http.ResponseWriter) (string, time.Time) {
+func setCookie(w http.ResponseWriter, r *http.Request) (string, time.Time) {
 	uuid, err := newUUID()
 	if err != nil {
-		showError(w, err)
+		showError(w, r, err)
 	}
 	sessionToken := uuid
 	dTSNow := time.Now()
@@ -461,14 +462,14 @@ func setCookie(w http.ResponseWriter) (string, time.Time) {
 	return sessionToken, dTSNow
 }
 
-func dbCheckCredentials(w http.ResponseWriter, username string, password string) bool {
+func dbCheckCredentials(w http.ResponseWriter, r *http.Request, username string, password string) bool {
 	username = "\"" + username + "\""
 	password = "\"" + password + "\""
 
 	queryString := "select name, role, id from user where username == " + username + " and password == " + password
 	rows, err := db.Query(queryString)
 	if err != nil {
-		showError(w, err)
+		showError(w, r, err)
 	}
 
 	defer rows.Close()
@@ -479,7 +480,7 @@ func dbCheckCredentials(w http.ResponseWriter, username string, password string)
 		var id int
 		err = rows.Scan(&name, &role, &id)
 		if err != nil {
-			showError(w, err)
+			showError(w, r, err)
 		} else {
 			aD.User.Name = name
 			aD.User.Role = role
@@ -491,14 +492,14 @@ func dbCheckCredentials(w http.ResponseWriter, username string, password string)
 	return false
 }
 
-func dbGetUsers(w http.ResponseWriter) bool {
+func dbGetUsers(w http.ResponseWriter, r *http.Request) bool {
 	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "id"}, {Index: 1, Value: "name"}, {Index: 2, Value: "username"}}}
 	aD.Table.Rows = make([]RowData, 0)
 
 	queryString := `select ` + aD.Table.Header.Row[0].Value + `, ` + aD.Table.Header.Row[1].Value + ` from user where ` + aD.Table.Header.Row[2].Value + ` != "admin"`
 	rows, err := db.Query(queryString)
 	if err != nil {
-		showError(w, err)
+		showError(w, r, err)
 	}
 
 	defer rows.Close()
@@ -507,7 +508,7 @@ func dbGetUsers(w http.ResponseWriter) bool {
 		var id int
 		err = rows.Scan(&id, &name)
 		if err != nil {
-			showError(w, err)
+			showError(w, r, err)
 		} else {
 			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: id, Row: []ColData{{Value: name}}})
 		}
@@ -518,7 +519,7 @@ func dbGetUsers(w http.ResponseWriter) bool {
 	return false
 }
 
-func dbGetAlbums(w http.ResponseWriter) bool {
+func dbGetAlbums(w http.ResponseWriter, r *http.Request) bool {
 	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "id_user"}}}
 	aD.Table.Rows = make([]RowData, 0)
 
@@ -528,7 +529,7 @@ func dbGetAlbums(w http.ResponseWriter) bool {
 	stmt, err := db.Prepare(`select ` + aD.Table.Header.Row[0].Value + ` from album where ` + aD.Table.Header.Row[1].Value + `=?`)
 	rows, err := stmt.Query(strconv.Itoa(aD.Page.Author.ID))
 	if err != nil {
-		showError(w, err)
+		showError(w, r, err)
 	}
 
 	defer rows.Close()
@@ -536,7 +537,7 @@ func dbGetAlbums(w http.ResponseWriter) bool {
 		var name string
 		err = rows.Scan(&name)
 		if err != nil {
-			showError(w, err)
+			showError(w, r, err)
 		} else {
 			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: len(aD.Table.Rows) + 1, Row: []ColData{{Value: name}}})
 		}
@@ -547,7 +548,7 @@ func dbGetAlbums(w http.ResponseWriter) bool {
 	return false
 }
 
-func dbGetImages(w http.ResponseWriter, idAlbum string) bool {
+func dbGetImages(w http.ResponseWriter, r *http.Request, idAlbum string) bool {
 	aD.Table.Header = RowData{0, []ColData{{Index: 0, Value: "name"}, {Index: 1, Value: "id_user"}, {Index: 2, Value: "id_album"}}}
 	aD.Table.Rows = make([]RowData, 0)
 
@@ -557,7 +558,7 @@ func dbGetImages(w http.ResponseWriter, idAlbum string) bool {
 	stmt, err := db.Prepare(`select ` + aD.Table.Header.Row[0].Value + ` from image where ` + aD.Table.Header.Row[1].Value + `=? and ` + aD.Table.Header.Row[2].Value + ` =?`)
 	rows, err := stmt.Query(aD.Page.Author.ID, idAlbum)
 	if err != nil {
-		showError(w, err)
+		showError(w, r, err)
 	}
 
 	defer rows.Close()
@@ -565,7 +566,7 @@ func dbGetImages(w http.ResponseWriter, idAlbum string) bool {
 		var name string
 		err = rows.Scan(&name)
 		if err != nil {
-			showError(w, err)
+			showError(w, r, err)
 		} else {
 			aD.Table.Rows = append(aD.Table.Rows, RowData{Index: len(aD.Table.Rows) + 1, Row: []ColData{{Value: name}}})
 		}
@@ -576,35 +577,34 @@ func dbGetImages(w http.ResponseWriter, idAlbum string) bool {
 	return false
 }
 
-func dbDeleteSession(w http.ResponseWriter) {
+func dbDeleteSession(w http.ResponseWriter, r *http.Request) {
 	statement, err := db.Prepare("delete from session where id_user=?")
 	if err != nil {
-		showError(w, err)
+		showError(w, r, err)
 	}
 	result, err := statement.Exec(aD.User.ID)
-	fmt.Println(result.RowsAffected())
 	if err != nil {
-		showError(w, err)
+		showError(w, r, err)
 	}
 }
 
-func dbStoreSession(w http.ResponseWriter, sessionToken string, dTSExpr time.Time) {
+func dbStoreSession(w http.ResponseWriter, r *http.Request, sessionToken string, dTSExpr time.Time) {
 	statement, err := db.Prepare(`PRAGMA foreign_keys = true;`)
 	if err != nil {
-		showError(w, err)
+		showError(w, r, err)
 	}
 	_, err = statement.Exec()
 	if err != nil {
-		showError(w, err)
+		showError(w, r, err)
 	}
 
 	statement, err = db.Prepare("INSERT INTO session (id, id_user, datetimestamp_lastlogin) VALUES (?, ?, ?)")
 	if err != nil {
-		showError(w, err)
+		showError(w, r, err)
 	}
 	_, err = statement.Exec(sessionToken, aD.User.ID, dTSExpr.Unix())
 	if err != nil {
-		showError(w, err)
+		showError(w, r, err)
 	}
 }
 
