@@ -29,23 +29,23 @@ type Response struct {
 type MenuItems struct {
 	Item string
 	Link string
- Icon string
+	Icon string
 }
 
 //AppData is a custom type to store the Data related to the Application
 type AppData struct {
-	Title          string
-	User           AppUser
-	MenuItemsRight []MenuItems
- MenuItemsLeft  []MenuItems
-	Page           PageData
-	Table          DBTable
-	State          string
-	UI             string
-	Error          string
+	Title      string
+	User       AppUser
+	MenuItemsR []MenuItems
+	MenuItemsL []MenuItems
+	Page       PageData
+	Table      DBTable
+	State      string
+	UI         string
+	Error      string
 }
 
-//PageData is a custom type to store Title and 
+//PageData is a custom type to store Title and
 //Content / Body of the Web Page to be displayed
 type PageData struct {
 	Name   string
@@ -54,22 +54,22 @@ type PageData struct {
 	Author PageAuthor
 }
 
-//AppUser is a custom type to 
-//store the User's Name and 
+//AppUser is a custom type to
+//store the User's Name and
 //access level (Role)
 type AppUser struct {
-	Name         string
-	Role         int
-	ID           int
-	UN           string
-	PW           string
-	Status       string
-	Token        string
-	TC           time.Time
+	Name   string
+	Role   int
+	ID     int
+	UN     string
+	PW     string
+	Status string
+	Token  string
+	TC     time.Time
 }
 
-//PageAuthor is a custom type 
-//to store the User's Name and 
+//PageAuthor is a custom type
+//to store the User's Name and
 //access level (Role)
 type PageAuthor struct {
 	Name string
@@ -332,22 +332,22 @@ func renderTmplt(w http.ResponseWriter, r *http.Request) {
 }
 
 func loadMenuItems() {
-  aD.MenuItemsLeft = []MenuItems{
-  {Item: `Home`, Icon: `home`, Link: `/home`},
-  {Item: `My Account`, Icon: `account_circle`, Link: `/myAccount`},
-  {Item: `Logout`, Icon: `arrow_back`, Link: `/logout`},
- }
+	aD.MenuItemsL = []MenuItems{
+		{Item: `Home`, Icon: `home`, Link: `/home`},
+		{Item: `My Account`, Icon: `account_circle`, Link: `/myAccount`},
+		{Item: `Logout`, Icon: `arrow_back`, Link: `/logout`},
+	}
 	switch aD.User.Role {
 	case -7:
-		aD.MenuItemsRight = []MenuItems{
+		aD.MenuItemsR = []MenuItems{
 			{Item: `Create User`, Link: `/createUser`},
 			{Item: `Upload Image`, Link: `/uploadImage`},
 			{Item: `Create Album`, Link: `/createAlbum`},
 			{Item: `Download Album`, Link: `/downloadAlbum`},
-  }
+		}
 	default:
 		aD.Page.Author.ID = aD.User.ID
-		aD.MenuItemsRight = []MenuItems{
+		aD.MenuItemsR = []MenuItems{
 			{Item: `Upload Image`, Link: `/uploadImage`},
 			{Item: `Create Album`, Link: `/createAlbum`},
 			{Item: `Download Album`, Link: `/downloadAlbum`},
