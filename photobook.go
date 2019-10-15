@@ -220,7 +220,7 @@ func handlerLogout(w http.ResponseWriter, r *http.Request) {
 	if err := isAuthorized(w, r); err == nil {
 		dBDelSession(w, r)
 		http.SetCookie(w, &http.Cookie{
-			Name:   `sessionToken`,
+			Name:   `Token`,
 			Value:  ``,
 			MaxAge: 0,
 		})
@@ -286,7 +286,7 @@ func handlerViewImage(w http.ResponseWriter, r *http.Request) {
 
 func isAuthorized(w http.ResponseWriter, r *http.Request) error {
 	if r.Method == `GET` {
-		c, err := r.Cookie(`sessionToken`)
+		c, err := r.Cookie(`Token`)
 		if err == nil {
 			if c.Value == aD.User.Token && aD.User.Token != "" {
 				return nil
@@ -405,7 +405,7 @@ func setCookie(w http.ResponseWriter, r *http.Request) error {
 	aD.User.Token = uuid
 	aD.User.TC = time.Now()
 	http.SetCookie(w, &http.Cookie{
-		Name:    `sessionToken`,
+		Name:    `Token`,
 		Value:   uuid,
 		Expires: aD.User.TC.Add(120 * time.Second),
 	})
