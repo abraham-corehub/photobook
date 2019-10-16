@@ -130,9 +130,9 @@ func startPhotoBook() {
 	mux.HandleFunc(`/album/view`, handlerViewAlbum)
 	//mux.HandleFunc(`/image/view`, handlerViewImage)
 	//mux.HandleFunc(`/user/edit`, handlerUserEdit)
-	//mux.HandleFunc("/user/reset", handlerUserReset)
-	//mux.HandleFunc("/user/delete", handlerUserDelete)
-	//mux.HandleFunc("/user", handlerUser)
+	//mux.HandleFunc(`/user/reset`, handlerUserReset)
+	//mux.HandleFunc(`/user/delete`, handlerUserDelete)
+	//mux.HandleFunc(`/user`, handlerUser)
 	log.Fatal(http.ListenAndServe(`:8080`, mux))
 }
 
